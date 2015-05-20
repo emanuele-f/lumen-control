@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <declare-styleable name="ColorPicker">
+        <attr name="color_wheel_radius" format="dimension" />
+        <attr name="color_wheel_thickness" format="dimension" />
+        <attr name="color_center_radius" format="dimension" />
+        <attr name="color_center_halo_radius" format="dimension"/>
+        <attr name="color_pointer_radius" format="dimension" />
+        <attr name="color_pointer_halo_radius" format="dimension" />
+    </declare-styleable>
+    <declare-styleable name="ColorBars">
+        <attr name="bar_thickness" format="dimension" />
+        <attr name="bar_length" format="dimension" />
+        <attr name="bar_pointer_radius" format="dimension" />
+        <attr name="bar_pointer_halo_radius" format="dimension" />
+        <attr name="bar_orientation_horizontal" format="boolean" />
+    </declare-styleable>
+    
+    <declare-styleable name="BrightnessBar">
+       <attr name="min" format="integer" />
+       <attr name="max" format="integer" />
+       <attr name="value" format="integer" />
+       <attr name="interval" format="integer" />
+       <attr name="thumb" format="integer" />
+       <attr name="canjump" format="boolean" />
+       <attr name="tickheight" format="integer" />
+       <attr name="tickwidth" format="integer" />
+       <attr name="tickcolor" format="color" />
+       <attr name="bgcolor" format="color" />
+       <attr name="bgradius" format="color" />
+   </declare-styleable>
+
+</resources>

@@ -1,0 +1,51 @@
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:custom="http://schemas.android.com/apk/res/com.emanuelef.lightfun"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:paddingBottom="@dimen/activity_vertical_margin"
+    android:paddingLeft="@dimen/activity_horizontal_margin"
+    android:paddingRight="@dimen/activity_horizontal_margin"
+    android:paddingTop="@dimen/activity_vertical_margin"
+    tools:context="com.emanuelef.lightfun.MainActivity$PlaceholderFragment" >
+    
+    <ToggleButton
+        android:id="@+id/onoff"
+        android:textOn="I"
+        android:textOff="O"
+    	android:layout_width="wrap_content"
+    	android:layout_height="wrap_content"/>
+    
+    <LinearLayout android:orientation="vertical"
+        android:gravity="center_horizontal"
+        android:layout_below="@id/onoff"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content">
+	    <com.larswerkman.holocolorpicker.ColorPicker
+	    	android:id="@+id/picker"
+	    	custom:color_wheel_radius="100dp"
+	    	android:layout_width="wrap_content"
+	    	android:layout_height="wrap_content"/>
+	    
+	    <com.larswerkman.holocolorpicker.SVBar
+	    	android:id="@+id/svbar"
+	    	android:layout_width="wrap_content"
+	    	android:layout_height="wrap_content"/>
+	    
+	    <com.emanuelef.lightfun.BrightnessBar
+	        android:id="@+id/brbar"
+	        custom:min="0"
+	        custom:value="120"
+	        custom:max="255"
+	        custom:interval="15"
+	        custom:thumb="@drawable/slider_handle"
+	        custom:canjump="true"
+	        android:layout_marginTop="5dp"
+	        android:paddingLeft="5dp"
+	        android:paddingRight="5dp"
+	        android:paddingTop="5dp"
+	        android:paddingBottom="5dp"
+	        android:layout_width="match_parent"
+	    	android:layout_height="wrap_content"/>
+    </LinearLayout>
+</RelativeLayout>
