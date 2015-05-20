@@ -35,9 +35,9 @@
 	    <com.emanuelef.lightfun.BrightnessBar
 	        android:id="@+id/brbar"
 	        custom:min="0"
-	        custom:value="120"
-	        custom:max="255"
-	        custom:interval="15"
+	        custom:value="0"
+	        custom:max="100"
+	        custom:interval="20"
 	        custom:thumb="@drawable/slider_handle"
 	        custom:canjump="true"
 	        android:layout_marginTop="5dp"

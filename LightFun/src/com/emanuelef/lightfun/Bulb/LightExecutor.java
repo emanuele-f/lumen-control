@@ -17,6 +17,7 @@ import android.util.Log;
 import com.emanuelef.lightfun.Bulb.LightCommands.ColorCommand;
 import com.emanuelef.lightfun.Bulb.LightCommands.LightCommand;
 import com.emanuelef.lightfun.Bulb.LightCommands.OnOffCommand;
+import com.emanuelef.lightfun.Bulb.LightCommands.WarmCommand;
 import com.emanuelef.lightfun.Bulb.LightController.LightState;
 import com.emanuelef.lightfun.Bulb.LightController.onLightStateReceiver;
 
@@ -26,6 +27,7 @@ public class LightExecutor implements Runnable {
 	
 	// Protocol specs
 	static final String SRVCMD_RGBW = "/rgb?";
+	static final String SRVCMD_WARM = "/warm?";
 	static final String SRVCMD_ON = "/on";
 	static final String SRVCMD_OFF = "/off";
 	static final String SRVQRY_COLOR = "/color";
@@ -199,6 +201,10 @@ public class LightExecutor implements Runnable {
 							request(SRVCMD_ON);
 						else
 							request(SRVCMD_OFF);
+						break;
+					case SET_WARM:
+						WarmCommand warm = (WarmCommand) cmd;
+						request(SRVCMD_WARM + warm.brightness);
 						break;
 					case QUERY_STATE:
 						String color_r = request(SRVQRY_COLOR);

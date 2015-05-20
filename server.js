@@ -41,6 +41,7 @@ var DEVICE_NO = null;
 var AUTOMODE = false;
 var STATUS_ON = false;
 var STATUS_COLOR = null;
+var STATUS_WARM = null;
 var DEVICE_READY = false;
 var STATE_SYNC = false;
 var ACTION_QUEUE = [];
@@ -59,8 +60,10 @@ var RESPONSE_OFFLINE = "OFFLINE";
 // groups compatible actions -> performs only the last one
 var ACTION_TURN = 1;
 var ACTION_COLOR = 2;
+var ACTION_WARM = 3;
 var ACTION_TURN_V;
 var ACTION_COLOR_V = null;
+var ACTION_WARM_V = null
 
 function xrgb_to_rgb(hexstr)
 {
@@ -104,13 +107,14 @@ function cmyw_to_rgb(cmyw)
  *  [read]
  *  /status : online | offline | auto-mode
  *  /ison : on | off | RESPONSE_OFFLINE
- *  /color : 0xrrggbbww | RESPONSE_OFFLINE
+ *  /color : 0xrrggbb| RESPONSE_OFFLINE
  * 
  *  [write] : OK | PENDING | RESPONSE_ERROR
  *  /on
  *  /off
  *  /reset
  *  /rgb?0xrrggbb
+ *  /warm?0-100
  * 
  *  [debug]
  *  /getpending : (int)
@@ -132,6 +136,10 @@ function perform_action(action)
         //~ console.log("C:"+cmyw.c + " M:"+cmyw.m + " Y:"+cmyw.y + " W:"+cmyw.w);
         lumen.color(cmyw.c, cmyw.m, cmyw.y, cmyw.w, function () {
             STATUS_COLOR = ACTION_COLOR_V;
+        });
+    } else if (action == ACTION_WARM) {
+        lumen.warmWhite(ACTION_WARM_V, function () {
+            STATUS_WARM = ACTION_WARM_V;
         });
     }
 }
@@ -219,6 +227,16 @@ function process_request(request)
         ACTION_COLOR_V = xrgb_to_rgb(query);
         //~ console.log("R:"+ACTION_COLOR_V.r + " G:"+ACTION_COLOR_V.g + " B:"+ACTION_COLOR_V.b);
         action = ACTION_COLOR;
+    } else if (pathname == "/warm") {
+        if (query == null)
+            return RESPONSE_ERROR;
+            
+        var b = parseInt(query) || -1;
+        if (b < 0 || b > 100)
+            return RESPONSE_ERROR;
+            
+        ACTION_WARM_V = b;
+        action = ACTION_WARM;
     }
     
     // Let's see if we can fulfil request now, otherwise enqueue

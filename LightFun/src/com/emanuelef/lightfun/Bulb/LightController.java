@@ -7,6 +7,7 @@ import com.emanuelef.lightfun.Bulb.LightCommands.ColorCommand;
 import com.emanuelef.lightfun.Bulb.LightCommands.LightCommand;
 import com.emanuelef.lightfun.Bulb.LightCommands.OnOffCommand;
 import com.emanuelef.lightfun.Bulb.LightCommands.Types;
+import com.emanuelef.lightfun.Bulb.LightCommands.WarmCommand;
 
 public class LightController {
 //	public static final String SERVER_HOST = "192.168.1.2";
@@ -46,6 +47,9 @@ public class LightController {
 		
 		queue.lock();
 		try {
+			queue.XRemoveType(Types.SET_ONOFF);
+			queue.XRemoveType(Types.SET_WARM);
+			
 			// see if there is something relevant
 			command = (ColorCommand) queue.XGetRelevant(Types.SET_COLOR, tstamp);
 			if (command != null) {
@@ -65,6 +69,33 @@ public class LightController {
 		}
 	}
 	
+	public void setWarmBright(int brightness) {
+		// 0-100 brightness
+		WarmCommand cmd;
+		final long tstamp = LightCommandQueue.getTimestamp();
+		
+		queue.lock();
+		try {
+			queue.XRemoveType(Types.SET_COLOR);
+			queue.XRemoveType(Types.SET_ONOFF);
+			
+			cmd = (WarmCommand) queue.XGetRelevant(Types.SET_WARM, tstamp);
+			if (cmd != null) {
+				// reuse this
+				cmd.time = tstamp;
+				cmd.brightness = brightness;
+			} else {
+				// allocate a new command
+				cmd = new WarmCommand();
+				cmd.time = tstamp;
+				cmd.brightness = brightness;
+				queue.XPush(cmd);
+			}
+		} finally {
+			queue.unlock();
+		}
+	}
+	
 	public void setOn(boolean ison) {
 		final long tstamp = LightCommandQueue.getTimestamp();
 		
@@ -72,6 +103,8 @@ public class LightController {
 		try {
 			// Remove any color commands
 			queue.XRemoveType(Types.SET_COLOR);
+			queue.XRemoveType(Types.SET_WARM);
+			
 			OnOffCommand cmd = (OnOffCommand) queue.XGetSingle(Types.SET_ONOFF);
 			if (cmd != null) {
 				// Reset
