@@ -132,7 +132,7 @@ function put_action(action)
 // called regurarly to perform actions. use ACTPEND to serialize
 function action_consumer()
 {
-    if (! DEVICE_READY || ACTPEND || ACTION_QUEUE.isEmpty())
+    if (! DEVICE_READY || ACTPEND || ACTION_QUEUE.length==0)
         return;
     
     var action = ACTION_QUEUE.pop();
@@ -256,9 +256,12 @@ function process_request(request)
     
     // Let's see if we can fulfil request now, otherwise enqueue
     if (action != null) {
-        // TODO maybe remove RESPONSE_PENDING
         put_action(action);
-        return RESPONSE_OK;
+        
+        if (DEVICE_READY)
+            return RESPONSE_OK;
+        else
+            return RESPONSE_PENDING;
     }
 }
 
@@ -275,6 +278,47 @@ function onRequest(request)
         clsock.write(reply + DATA_MARKER);
         console.log(host + " << " + reply);
     }
+}
+
+function onDiscover(lume) {
+    lumen = lume;
+    console.log("Lumen found: " + lumen.toString());
+    
+    lumen.connect(function () {});
+    
+    lumen.on('connect', function() {
+        console.log('connected!');
+        lumen.discoverServicesAndCharacteristics(function(){
+            lumen.setup(function() {
+                lumen.readSerialNumber(function(serialNumber) {
+                    console.log('\tserial number = ' + serialNumber);
+                    DEVICE_NO = serialNumber;
+                    //~ lumen.normalMode(function() {
+
+                    lumen.readState(function(state) {
+                        console.log("initial state read, device is ready!");
+                        cmyw = {
+                            c: state.colorC,
+                            m: state.colorM,
+                            y: state.colorY,
+                            w: state.colorW
+                        }
+                        STATUS_COLOR = cmyw_to_rgb(cmyw);
+                        console.log("C:"+cmyw.c + " M:"+cmyw.m + " Y:"+cmyw.y + " W:"+cmyw.w);
+                        console.log("R:"+STATUS_COLOR.r + " G:"+STATUS_COLOR.g + " B:"+STATUS_COLOR.b);
+                        STATUS_ON = state.on;
+                        DEVICE_READY = true;
+                        STATE_SYNC = true;
+                    });//});
+                });
+            });
+        });
+    });
+    lumen.on('disconnect', function() {
+        console.log("disconnected");
+        DEVICE_READY = false;
+        Lumen.discover(onDiscover);
+    });
 }
 
 // GLOBALS
@@ -324,46 +368,5 @@ server.on('listening', function () {
     console.log("Listening on port " + SERVER_PORT);
 });
 server.listen(SERVER_PORT);
-
-// Setup the action consumer
 setInterval(action_consumer, CONSUME_DELAY);
-
-Lumen.discover(function(lume) {
-    lumen = lume;
-    console.log("Lumen found: " + lumen.toString());
-    
-    lumen.connect(function () {});
-    
-    lumen.on('connect', function() {
-        console.log('connected!');
-        lumen.discoverServicesAndCharacteristics(function(){
-            lumen.setup(function() {
-                lumen.readSerialNumber(function(serialNumber) {
-                    console.log('\tserial number = ' + serialNumber);
-                    DEVICE_NO = serialNumber;
-                    //~ lumen.normalMode(function() {
-
-                    lumen.readState(function(state) {
-                        console.log("initial state read, device is ready!");
-                        cmyw = {
-                            c: state.colorC,
-                            m: state.colorM,
-                            y: state.colorY,
-                            w: state.colorW
-                        }
-                        STATUS_COLOR = cmyw_to_rgb(cmyw);
-                        console.log("C:"+cmyw.c + " M:"+cmyw.m + " Y:"+cmyw.y + " W:"+cmyw.w);
-                        console.log("R:"+STATUS_COLOR.r + " G:"+STATUS_COLOR.g + " B:"+STATUS_COLOR.b);
-                        STATUS_ON = state.on;
-                        DEVICE_READY = true;
-                        STATE_SYNC = true;
-                    });//});
-                });
-            });
-        });
-    });
-    lumen.on('disconnect', function() {
-        console.log("disconnected");
-        DEVICE_READY = false;
-    });
-});
+Lumen.discover(onDiscover);
