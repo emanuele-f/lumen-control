@@ -1,6 +1,8 @@
 /*
  * Emanuele Faranda     18/05/2015
  * 
+ * USES UTF-8
+ * 
  *  cmyk (standard):
  *      .c: 0.0-1.0 : cyan level
  *      .m: 0.0-1.0 : magenta level
@@ -29,12 +31,12 @@
  *      xrgb <-> rgb <-> cmyw
  */
 
-var http = require("http");
-var util = require("util");
-var url = require("url");
+var net = require('net');
 var Lumen = require("lumen");
 
 var SERVER_PORT = 7878;
+var DATA_MARKER = "::";
+
 var DEVICE_NO = null;
 var AUTOMODE = false;
 var STATUS_ON = false;
@@ -143,11 +145,31 @@ function process_action_queue()
     }
 }
 
+function split_request(request) {
+    var path;
+    var query;
+    var qx = request.indexOf("?");
+    
+    if (qx != -1) {
+        path = request.slice(0, qx);
+        query = request.slice(qx+1);
+    } else {
+        path = request;
+        query = null;
+    }
+    
+    return {
+        path: path,
+        query: query
+    }
+}
+
 // Processa una richiesta http, se possibile, o la accoda in ACTION_QUEUE
 function process_request(request)
 {
-    var parsed = url.parse(request.url);
-    var pathname = parsed.pathname;
+    var parsed = split_request(request);
+    var pathname = parsed.path;
+    var query = parsed.query;
     var action = null;
     
     // Query commands
@@ -188,14 +210,13 @@ function process_request(request)
         // empty the queue
         ACTION_QUEUE = [];
     } else if (pathname == "/rgb") {
-        if (parsed.search == null)
+        if (query == null)
             return RESPONSE_ERROR;
             
-        var hex = parsed.search.slice(1, parsed.search.length);
-        if (hex.length != 8 || hex.slice(0,2) != "0x")
+        if (query.length != 8 || query.slice(0,2) != "0x")
             return RESPONSE_ERROR;
         
-        ACTION_COLOR_V = xrgb_to_rgb(hex);
+        ACTION_COLOR_V = xrgb_to_rgb(query);
         //~ console.log("R:"+ACTION_COLOR_V.r + " G:"+ACTION_COLOR_V.g + " B:"+ACTION_COLOR_V.b);
         action = ACTION_COLOR;
     }
@@ -212,26 +233,68 @@ function process_request(request)
         }
 }
 
-function onRequest(request, response)
+function onRequest(request)
 {
-    var host = request.connection.remoteAddress;
+    var host = clsock.remoteAddress;
     if (host.indexOf("::ffff:")==0)
         host = host.slice(7, host.length);
-    host = host + ":" + request.connection.remotePort;
+    host = host + ":" + clsock.remotePort;
     
-    console.log(host + " >> " + request.url);
-    var body = process_request(request);
-    if (body != null) {
-        response.writeHead(200, {"Content-Type":"text/html"});
-        response.write(body);
-        console.log(host + " << " + body);
+    console.log(host + " >> " + request);
+    var reply = process_request(request);
+    if (reply != null) {
+        clsock.write(reply + DATA_MARKER);
+        console.log(host + " << " + reply);
     }
-    response.end();
 }
 
-var server = http.createServer(onRequest).listen(SERVER_PORT);
-console.log("Server started on port " + SERVER_PORT);
+// GLOBALS
+var clsock = null;
 var lumen = null;
+var partial = "";
+
+// Start the server
+var server = net.createServer(function (socket) {
+    console.log("Client Connected");
+    
+    if (clsock != null) {
+        console.log("No more clients supported");
+        socket.end();
+        return;
+    }
+
+    clsock = socket;
+    clsock.setEncoding('utf8');
+    clsock.on('data', function (data) {
+        // join previous pending data
+        var pending = partial + data.toString();
+        var k;
+        
+        do {
+            k = pending.indexOf(DATA_MARKER);
+            if (k != -1) {
+                var req = pending.substr(0, k);
+                onRequest(req);
+                pending = pending.substr(k+DATA_MARKER.length);
+            }
+        }while (k != -1);
+        
+        // save remaining data
+        partial = pending;
+    });
+    clsock.on('close', function () {
+        console.log("Client disconnected");
+        clsock = null;
+    });
+    clsock.on('error', function (err) {
+        console.log("Client error: " + err);
+        clsock = null;
+    });
+});
+server.on('listening', function () {
+    console.log("Listening on port " + SERVER_PORT);
+});
+server.listen(SERVER_PORT);
 
 Lumen.discover(function(lume) {
     lumen = lume;

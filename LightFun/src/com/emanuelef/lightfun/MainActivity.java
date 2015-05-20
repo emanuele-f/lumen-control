@@ -22,7 +22,7 @@ import com.larswerkman.holocolorpicker.ColorPicker.OnColorChangedListener;
 import com.larswerkman.holocolorpicker.SVBar;
 
 public class MainActivity extends AppCompatActivity implements OnColorChangedListener,
-	OnBrightnessBarChangeLister, OnCheckedChangeListener {
+	OnBrightnessBarChangeLister, OnCheckedChangeListener,  onLightStateReceiver {
 	PlaceholderFragment fragment;
 	LightController bulb;
 
@@ -39,8 +39,7 @@ public class MainActivity extends AppCompatActivity implements OnColorChangedLis
 			fragment = (PlaceholderFragment) getSupportFragmentManager().getFragments().get(0);
 		}
 		
-		this.bulb = new LightController(fragment, this);
-		bulb.queryState();
+		this.bulb = new LightController(this, this);
 	}
 	
 	@Override
@@ -86,11 +85,30 @@ public class MainActivity extends AppCompatActivity implements OnColorChangedLis
 		fragment.unchanged_button = false;
 		bulb.setOn(isChecked);
 	}
+	
+	@Override
+	public void onInitState(LightState state) {
+		if (fragment.unchanged_color)
+			fragment.picker.setColor(state.color);
+		if (fragment.unchanged_button)
+			fragment.onoff.setChecked(state.ison);
+	}
+
+	@Override
+	public void onConnect() {
+		bulb.queryState();
+	}
+
+	@Override
+	public void onDisconnect() {
+		// TODO Auto-generated method stub
+		
+	}
 
 	/**
 	 * A placeholder fragment containing a simple view.
 	 */
-	public static class PlaceholderFragment extends Fragment implements onLightStateReceiver {
+	public static class PlaceholderFragment extends Fragment {
 		// Used to get initial state
 		boolean unchanged_button = true;
 		boolean unchanged_color = true;
@@ -121,14 +139,6 @@ public class MainActivity extends AppCompatActivity implements OnColorChangedLis
 			onoff.setOnCheckedChangeListener(activity);
 
 			return rootView;
-		}
-		
-		@Override
-		public void onInitState(LightState state) {
-			if (unchanged_color)
-				picker.setColor(state.color);
-			if (unchanged_button)
-				onoff.setChecked(state.ison);
 		}
 		
 		public int getBrightness() {

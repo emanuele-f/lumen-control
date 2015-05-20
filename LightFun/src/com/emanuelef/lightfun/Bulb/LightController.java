@@ -9,14 +9,17 @@ import com.emanuelef.lightfun.Bulb.LightCommands.OnOffCommand;
 import com.emanuelef.lightfun.Bulb.LightCommands.Types;
 
 public class LightController {
-//	public static final String SERVER_HOST = "cdotslash.ns0.it:7878";
-	public static final String SERVER_HOST = "192.168.1.2:7878";
+//	public static final String SERVER_HOST = "192.168.1.2";
+	public static final String SERVER_HOST = "cdotslash.ns0.it";
+	public static final int SERVER_PORT = 7878;
 	protected LightCommandQueue queue;
 	private LightExecutor consumer;
 	
 	public interface onLightStateReceiver
 	{
 		void onInitState(LightState state);
+		void onConnect();
+		void onDisconnect();
 	}
 	public static class LightState {
 		public boolean ison;
@@ -25,7 +28,7 @@ public class LightController {
 	
 	public LightController(onLightStateReceiver receiver, Activity activity) {
 		queue = new LightCommandQueue();
-		consumer = new LightExecutor(queue, receiver, activity, SERVER_HOST);
+		consumer = new LightExecutor(queue, receiver, activity, SERVER_HOST, SERVER_PORT);
 		new Thread(consumer).start();
 	}
 	
