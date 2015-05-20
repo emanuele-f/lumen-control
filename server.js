@@ -34,6 +34,7 @@
 var net = require('net');
 var Lumen = require("lumen");
 
+var CONSUME_DELAY = 10;
 var SERVER_PORT = 7878;
 var DATA_MARKER = "::";
 
@@ -45,6 +46,7 @@ var STATUS_WARM = null;
 var DEVICE_READY = false;
 var STATE_SYNC = false;
 var ACTION_QUEUE = [];
+var ACTPEND = false;
 
 var DEVICE_STATUS_OFFLINE = "offline";
 var DEVICE_STATUS_ONLINE = "online";
@@ -119,37 +121,50 @@ function cmyw_to_rgb(cmyw)
  *  [debug]
  *  /getpending : (int)
  */
- 
-function perform_action(action)
+
+// put an action in the queue, if not already there
+function put_action(action)
 {
+    if (ACTION_QUEUE.indexOf(action)==-1)
+        ACTION_QUEUE.push(action);
+}
+
+// called regurarly to perform actions. use ACTPEND to serialize
+function action_consumer()
+{
+    if (! DEVICE_READY || ACTPEND || ACTION_QUEUE.isEmpty())
+        return;
+    
+    var action = ACTION_QUEUE.pop();
+    ACTPEND = true;
+    
     if (action == ACTION_TURN) {
         if (ACTION_TURN_V == "on")
             lumen.turnOn(function () {
                 STATUS_ON = true;
+                ACTPEND = false;
             });
         else 
             lumen.turnOff(function () {
                 STATUS_ON = false;
+                ACTPEND = false;
             });
     } else if (action == ACTION_COLOR) {
         cmyw = rgb_to_cmyw(ACTION_COLOR_V);
         //~ console.log("C:"+cmyw.c + " M:"+cmyw.m + " Y:"+cmyw.y + " W:"+cmyw.w);
         lumen.color(cmyw.c, cmyw.m, cmyw.y, cmyw.w, function () {
             STATUS_COLOR = ACTION_COLOR_V;
+            ACTPEND = false;
         });
     } else if (action == ACTION_WARM) {
         lumen.warmWhite(ACTION_WARM_V, function () {
             STATUS_WARM = ACTION_WARM_V;
+            ACTPEND = false;
         });
-    }
-}
-
-// Processa le azioni pendenti, chiamando perform_action
-function process_action_queue()
-{
-    while (ACTION_QUEUE.length > 0) {
-        var action = ACTION_QUEUE.pop();
-        perform_action(action);
+    } else {
+        // ??
+        console.log("Unknown action: "+action);
+        ACTPEND = false;
     }
 }
 
@@ -240,15 +255,11 @@ function process_request(request)
     }
     
     // Let's see if we can fulfil request now, otherwise enqueue
-    if (action != null)
-        if (DEVICE_READY) {
-            perform_action(action);
-            return RESPONSE_OK;
-        } else {
-            if (ACTION_QUEUE.indexOf(action)==-1)
-                ACTION_QUEUE.push(action);
-            return RESPONSE_PENDING;
-        }
+    if (action != null) {
+        // TODO maybe remove RESPONSE_PENDING
+        put_action(action);
+        return RESPONSE_OK;
+    }
 }
 
 function onRequest(request)
@@ -314,6 +325,9 @@ server.on('listening', function () {
 });
 server.listen(SERVER_PORT);
 
+// Setup the action consumer
+setInterval(action_consumer, CONSUME_DELAY);
+
 Lumen.discover(function(lume) {
     lumen = lume;
     console.log("Lumen found: " + lumen.toString());
@@ -343,9 +357,6 @@ Lumen.discover(function(lume) {
                         STATUS_ON = state.on;
                         DEVICE_READY = true;
                         STATE_SYNC = true;
-                        
-                        // perform pending actions
-                        process_action_queue();
                     });//});
                 });
             });
