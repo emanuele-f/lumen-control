@@ -30,44 +30,72 @@
  * Provided conversions:
  *      xrgb <-> rgb <-> cmyw
  */
-
+ 
+// :: modules ::
 var net = require('net');
 var Lumen = require("lumen");
 
+// :: server constraints ::
 var CONSUME_DELAY = 10;
 var SERVER_PORT = 7878;
 var DATA_MARKER = "$";
-var KEEP_ALIVE_LIMIT = 10; // seconds
+var KEEP_ALIVE_LIMIT = 10;              // seconds
 
-var DEVICE_NO = null;
-var AUTOMODE = false;
-var STATUS_ON = false;
-var STATUS_COLOR = null;
-var STATUS_WARM = null;
-var DEVICE_READY = false;
-var STATE_SYNC = false;
-var ACTION_QUEUE = [];
-var ACTPEND = false;
+// :: status modes ::
+var STATUS_MODE_WARM = "warm";
+var STATUS_MODE_COLOR = "color";
+var STATUS_MODE_DISCO = "disco";        // TODO link to disco2
+var STATUS_MODE_SOFT = "soft";          // TODO implement soft color change
 
-var DEVICE_STATUS_OFFLINE = "offline";
-var DEVICE_STATUS_ONLINE = "online";
-var DEVICE_STATUS_AUTO = "auto-mode";
-var DEVICE_IS_ON = "on";
-var DEVICE_IS_OFF = "off";
+// :: server replies codes ::
+var REPLY_ON = "on";
+var REPLY_OFF = "off";
+var REPLY_OFFLINE = "offline";
+var REPLY_ONLINE = "online";
 
+// :: client query commands ::
+var REQUEST_COLOR = "/color";
+var REQUEST_ONOFF = "/ison";
+var REQUEST_STATUS = "/status";
+
+// :: client commands ::
+var COMMAND_ON = "/on";
+var COMMAND_OFF = "/off";
+var COMMAND_COLOR = "/rgb";
+var COMMAND_WARM = "/warm";
+
+// :: server response to commands ::
 var RESPONSE_OK = "OK";
 var RESPONSE_PENDING = "PENDING";
 var RESPONSE_ERROR = "BAD REQUEST";
 var RESPONSE_OFFLINE = "OFFLINE";
 var RESPONSE_ALIVE = "+";
 
-// groups compatible actions -> performs only the last one
+// :: consumer queue action codes ::
 var ACTION_TURN = 1;
 var ACTION_COLOR = 2;
 var ACTION_WARM = 3;
 var ACTION_TURN_V;
-var ACTION_COLOR_V = null;
-var ACTION_WARM_V = null
+
+// :: bulb internal state clone ::
+var status_mode = STATUS_MODE_WARM;
+var status_on = true;
+var status_color = null;
+var status_warm = null;
+
+// :: bulb connection status ::
+var device_ready = false;
+var device_synched = false;             // if true, then status_* variables are synched with bulb
+
+// :: internals ::
+var clsock = null;                      // client socket - null if disconnected
+var lumen = null;                       // holds connected buld interface - null if disconnected
+var partial = "";                       // holds partial responses
+// internal request state: ensure only one applies
+var action_queue = [];
+var action_pending = false;
+var action_color_val = null;
+var action_warm_val = null
 
 function get_system_seconds()
 {
@@ -112,66 +140,67 @@ function cmyw_to_rgb(cmyw)
     };
 }
 
-/*
- *  [read]
- *  /status : online | offline | auto-mode
- *  /ison : on | off | RESPONSE_OFFLINE
- *  /color : 0xrrggbb| RESPONSE_OFFLINE
- * 
- *  [write] : OK | PENDING | RESPONSE_ERROR
- *  /on
- *  /off
- *  /reset
- *  /rgb?0xrrggbb
- *  /warm?0-100
- * 
- *  [debug]
- *  /getpending : (int)
- */
-
 // put an action in the queue, if not already there
 function put_action(action)
 {
-    if (ACTION_QUEUE.indexOf(action)==-1)
-        ACTION_QUEUE.push(action);
+    if (action_queue.indexOf(action)==-1)
+        action_queue.push(action);
 }
 
-// called regurarly to perform actions. use ACTPEND to serialize
+function _pending_done () {
+    action_pending = false;
+}
+
+// called regurarly to perform actions. use action_pending to serialize
 function action_consumer()
 {
-    if (! DEVICE_READY || ACTPEND || ACTION_QUEUE.length==0)
+    if (! device_ready || action_pending || action_queue.length==0)
         // nothing to do
         return;
     
-    var action = ACTION_QUEUE.pop();
-    ACTPEND = true;
+    var action = action_queue.pop();
+    action_pending = true;
     
     if (action == ACTION_TURN) {
-        if (ACTION_TURN_V == "on")
-            lumen.turnOn(function () {
-                STATUS_ON = true;
-                ACTPEND = false;
-            });
-        else 
+        if (ACTION_TURN_V == "on") {
+            status_on = true;
+            
+            // decide what "on" means
+            if (STATUS_MODE == STATUS_MODE_COLOR)
+                lumen.color(status_mode.c, status_color.m,
+                        status_color.y, status_color.w, _pending_done);
+            else if (status_mode == STATUS_MODE_WARM)
+                lumen.warmWhite(action_warm_val, _pending_done);
+            else if (status_mode == STATUS_MODE_DISCO)
+                lumen.disco2Mode(_pending_done);
+            //else if (status_mode == STATUS_MODE_SOFT) TODO
+            else {
+                console.log("Unknown mode:", status_mode);
+                lumen.turnOn(_pending_done);
+            }
+        } else  {
             lumen.turnOff(function () {
-                STATUS_ON = false;
-                ACTPEND = false;
+                status_on = false;
+                action_pending = false;
             });
+        }
     } else if (action == ACTION_COLOR) {
-        cmyw = rgb_to_cmyw(ACTION_COLOR_V);
+        cmyw = rgb_to_cmyw(action_color_val);
         //~ console.log("C:"+cmyw.c + " M:"+cmyw.m + " Y:"+cmyw.y + " W:"+cmyw.w);
         lumen.color(cmyw.c, cmyw.m, cmyw.y, cmyw.w, function () {
-            STATUS_COLOR = ACTION_COLOR_V;
-            ACTPEND = false;
+            status_mode = STATUS_MODE_COLOR;
+            status_color = action_color_val;
+            action_pending = false;
         });
     } else if (action == ACTION_WARM) {
-        lumen.warmWhite(ACTION_WARM_V, function () {
-            STATUS_WARM = ACTION_WARM_V;
-            ACTPEND = false;
+        lumen.warmWhite(action_warm_val, function () {
+            status_mode = STATUS_MODE_WARM;
+            status_warm = action_warm_val;
+            action_pending = false;
         });
     } else {
         console.log("Unknown action: "+action);
-        ACTPEND = false;
+        action_pending = false;
     }
 }
 
@@ -194,7 +223,7 @@ function split_request(request) {
     }
 }
 
-// Processa una richiesta http, se possibile, o la accoda in ACTION_QUEUE
+// Processa una richiesta http, se possibile, o la accoda in action_queue
 function process_request(request)
 {
     var parsed = split_request(request);
@@ -206,53 +235,44 @@ function process_request(request)
     if (pathname == "") {
         // just to keep alive
         return RESPONSE_ALIVE;
-    } else if (pathname == "/status") {
-        if (DEVICE_READY == null) {
-            return DEVICE_STATUS_OFFLINE;
-        } else {
-            if (AUTOMODE)
-                return DEVICE_STATUS_AUTO;
-            else
-                return DEVICE_STATUS_ONLINE;
-        }
-    } else if (pathname == "/ison") {
-        if (!DEVICE_READY && !STATE_SYNC)
+    } else if (pathname == REQUEST_STATUS) {
+        if (device_ready == null)
+            return REPLY_OFFLINE;
+        else
+            return REPLY_ONLINE;
+    } else if (pathname == REQUEST_ONOFF) {
+        if (!device_ready && !device_synched)
             return RESPONSE_OFFLINE;
         
-        if (STATUS_ON)
-            return DEVICE_IS_ON;
+        if (status_on)
+            return REPLY_ON;
         else
-            return DEVICE_IS_OFF;
-    } else if (pathname == "/getpending") {
-        return String(ACTION_QUEUE.length);
-    } else if (pathname == "/color") {
-        if (!DEVICE_READY && !STATE_SYNC)
+            return REPLY_OFF;
+    } else if (pathname == REQUEST_COLOR) {
+        if (!device_ready && !device_synched)
             return RESPONSE_OFFLINE;
             
-        return rgb_to_xrgb(STATUS_COLOR);
+        return rgb_to_xrgb(status_color);
     }
     
     // Imperative commands
-    if (pathname == "/on") {
+    if (pathname == COMMAND_ON) {
         action = ACTION_TURN;
         ACTION_TURN_V = "on"
-    } else if (pathname == "/off") {
+    } else if (pathname == COMMAND_OFF) {
         action = ACTION_TURN;
         ACTION_TURN_V = "off"
-    } else if (pathname == "/reset") {
-        // empty the queue
-        ACTION_QUEUE = [];
-    } else if (pathname == "/rgb") {
+    } else if (pathname == COMMAND_COLOR) {
         if (query == null)
             return RESPONSE_ERROR;
             
         if (query.length != 8 || query.slice(0,2) != "0x")
             return RESPONSE_ERROR;
         
-        ACTION_COLOR_V = xrgb_to_rgb(query);
-        //~ console.log("R:"+ACTION_COLOR_V.r + " G:"+ACTION_COLOR_V.g + " B:"+ACTION_COLOR_V.b);
+        action_color_val = xrgb_to_rgb(query);
+        //~ console.log("R:"+action_color_val.r + " G:"+action_color_val.g + " B:"+action_color_val.b);
         action = ACTION_COLOR;
-    } else if (pathname == "/warm") {
+    } else if (pathname == COMMAND_WARM) {
         if (query == null)
             return RESPONSE_ERROR;
             
@@ -260,7 +280,7 @@ function process_request(request)
         if (b < 0 || b > 100)
             return RESPONSE_ERROR;
             
-        ACTION_WARM_V = b;
+        action_warm_val = b;
         action = ACTION_WARM;
     }
     
@@ -268,7 +288,7 @@ function process_request(request)
     if (action != null) {
         put_action(action);
         
-        if (DEVICE_READY)
+        if (device_ready)
             return RESPONSE_OK;
         else
             return RESPONSE_PENDING;
@@ -307,41 +327,30 @@ function onDiscover(lume) {
         console.log('connected!');
         lumen.discoverServicesAndCharacteristics(function(){
             lumen.setup(function() {
-                lumen.readSerialNumber(function(serialNumber) {
-                    console.log('\tserial number = ' + serialNumber);
-                    DEVICE_NO = serialNumber;
-                    //~ lumen.normalMode(function() {
-
-                    lumen.readState(function(state) {
-                        console.log("initial state read, device is ready!");
-                        cmyw = {
-                            c: state.colorC,
-                            m: state.colorM,
-                            y: state.colorY,
-                            w: state.colorW
-                        }
-                        STATUS_COLOR = cmyw_to_rgb(cmyw);
-                        console.log("C:"+cmyw.c + " M:"+cmyw.m + " Y:"+cmyw.y + " W:"+cmyw.w);
-                        console.log("R:"+STATUS_COLOR.r + " G:"+STATUS_COLOR.g + " B:"+STATUS_COLOR.b);
-                        STATUS_ON = state.on;
-                        DEVICE_READY = true;
-                        STATE_SYNC = true;
-                    });//});
+                lumen.readState(function(state) {
+                    console.log("initial state read, device is ready!");
+                    cmyw = {
+                        c: state.colorC,
+                        m: state.colorM,
+                        y: state.colorY,
+                        w: state.colorW
+                    }
+                    status_color = cmyw_to_rgb(cmyw);
+                    console.log("C:"+cmyw.c + " M:"+cmyw.m + " Y:"+cmyw.y + " W:"+cmyw.w);
+                    console.log("R:"+status_color.r + " G:"+status_color.g + " B:"+status_color.b);
+                    status_on = state.on;
+                    device_ready = true;
+                    device_synched = true;
                 });
             });
         });
     });
     lumen.on('disconnect', function() {
         console.log("disconnected");
-        DEVICE_READY = false;
+        device_ready = false;
         Lumen.discover(onDiscover);
     });
 }
-
-// GLOBALS
-var clsock = null;
-var lumen = null;
-var partial = "";
 
 // Start the server
 var server = net.createServer(function (socket) {
