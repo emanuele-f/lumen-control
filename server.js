@@ -85,7 +85,7 @@ var status_color = null;
 var status_warm = null;
 
 // :: bulb connection status ::
-var device_ready = false;
+var device_ready = false;               // can be true after synch, not before
 var device_synched = false;             // if true, then status_* variables are synched with bulb
 
 // :: internals ::
@@ -95,9 +95,9 @@ var partial = "";                       // holds partial responses
 // internal request state: ensure only one applies
 var action_queue = [];
 var action_pending = false;
-var action_color_val;
-var action_warm_val;
-var action_turn_val;
+var action_color_val = {r:0, g:0, b:0};
+var action_warm_val = 0;
+var action_turn_val = "on";
 
 function get_system_seconds()
 {
@@ -252,7 +252,7 @@ function process_request(request)
         else
             return REPLY_ONLINE;
     } else if (pathname == REQUEST_ONOFF) {
-        if (!device_ready && !device_synched)
+        if (!device_ready)
             return RESPONSE_OFFLINE;
         
         if (status_on)
@@ -260,7 +260,7 @@ function process_request(request)
         else
             return REPLY_OFF;
     } else if (pathname == REQUEST_COLOR) {
-        if (!device_ready && !device_synched)
+        if (!device_ready)
             return RESPONSE_OFFLINE;
             
         return rgb_to_xrgb(status_color);
