@@ -36,7 +36,8 @@ var Lumen = require("lumen");
 
 var CONSUME_DELAY = 10;
 var SERVER_PORT = 7878;
-var DATA_MARKER = "::";
+var DATA_MARKER = "$";
+var KEEP_ALIVE_LIMIT = 10; // seconds
 
 var DEVICE_NO = null;
 var AUTOMODE = false;
@@ -66,6 +67,11 @@ var ACTION_WARM = 3;
 var ACTION_TURN_V;
 var ACTION_COLOR_V = null;
 var ACTION_WARM_V = null
+
+function get_system_seconds()
+{
+    return Math.floor(new Date() / 1000);
+}
 
 function xrgb_to_rgb(hexstr)
 {
@@ -133,6 +139,7 @@ function put_action(action)
 function action_consumer()
 {
     if (! DEVICE_READY || ACTPEND || ACTION_QUEUE.length==0)
+        // nothing to do
         return;
     
     var action = ACTION_QUEUE.pop();
@@ -162,7 +169,6 @@ function action_consumer()
             ACTPEND = false;
         });
     } else {
-        // ??
         console.log("Unknown action: "+action);
         ACTPEND = false;
     }
@@ -196,7 +202,10 @@ function process_request(request)
     var action = null;
     
     // Query commands
-    if (pathname == "/status") {
+    if (pathname == "") {
+        // just to keep alive
+        return;
+    } else if (pathname == "/status") {
         if (DEVICE_READY == null) {
             return DEVICE_STATUS_OFFLINE;
         } else {
@@ -265,6 +274,13 @@ function process_request(request)
     }
 }
 
+// extra formatting
+function request_string(req) {
+    if (req == "")
+        return "{KEEPALIVE}";
+    return req;
+}
+
 function onRequest(request)
 {
     var host = clsock.remoteAddress;
@@ -272,11 +288,11 @@ function onRequest(request)
         host = host.slice(7, host.length);
     host = host + ":" + clsock.remotePort;
     
-    console.log(host + " >> " + request);
+    console.log(" <- " + host + " " + request_string(request));
     var reply = process_request(request);
     if (reply != null) {
         clsock.write(reply + DATA_MARKER);
-        console.log(host + " << " + reply);
+        console.log(" -> " + host + " " + reply);
     }
 }
 
@@ -338,6 +354,7 @@ var server = net.createServer(function (socket) {
 
     clsock = socket;
     clsock.setEncoding('utf8');
+    clsock.setTimeout(KEEP_ALIVE_LIMIT*1000);
     clsock.on('data', function (data) {
         // join previous pending data
         var pending = partial + data.toString();
@@ -361,6 +378,11 @@ var server = net.createServer(function (socket) {
     });
     clsock.on('error', function (err) {
         console.log("Client error: " + err);
+        clsock = null;
+    });
+    clsock.on('timeout', function (err) {
+        console.log("Client timeout");
+        clsock.destroy();
         clsock = null;
     });
 });

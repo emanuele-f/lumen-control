@@ -3,6 +3,7 @@ package com.emanuelef.lightfun.Bulb;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
+import java.net.SocketException;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.channels.SocketChannel;
@@ -24,15 +25,17 @@ import com.emanuelef.lightfun.Bulb.LightController.onLightStateReceiver;
 public class LightExecutor implements Runnable {
 	static final String DEBUG_TAG = "LightExecutor";
 	static final int SLEEP_MILLI = 100;
+	static final int KEEP_ALIVE_SECS = 5;
 	
 	// Protocol specs
+	static final String SRVCMD_KEEPALIVE = "";
 	static final String SRVCMD_RGBW = "/rgb?";
 	static final String SRVCMD_WARM = "/warm?";
 	static final String SRVCMD_ON = "/on";
 	static final String SRVCMD_OFF = "/off";
 	static final String SRVQRY_COLOR = "/color";
 	static final String SRVQRY_STATE = "/ison";
-	static final String SRVRPL_END = "::";
+	static final String SRVRPL_END = "$";
 	static final String SRVRPL_BAD = "BAD REQUEST";
 	static final String SRVRPL_OFFLINE = "OFFLINE";
 	
@@ -46,6 +49,7 @@ public class LightExecutor implements Runnable {
 	ByteBuffer rbuf = ByteBuffer.allocate(256);
 	CharsetEncoder encoder;
 	CharsetDecoder decoder;
+	long alivetime;
 	
 	public LightExecutor(LightCommandQueue queue, onLightStateReceiver receiver, Activity activity, String host, int port) {
 		this.queue = queue;
@@ -70,6 +74,13 @@ public class LightExecutor implements Runnable {
 	
 	protected void onConnect() {
 		Log.d(DEBUG_TAG, "Gateway connection opened");
+		alivetime = LightCommandQueue.getTimestamp();
+		try {
+			sock.socket().setTcpNoDelay(true);
+		} catch (SocketException exc) {
+			// may cause keepalive troubles
+			Log.w(DEBUG_TAG, "Cannot set socket 'NoDelay' mode");
+		}
 		
 		// Notify connection
 		if (activity != null) {
@@ -83,7 +94,9 @@ public class LightExecutor implements Runnable {
 	}
 	
 	protected void onDisconnect() {
-		// Notify connection
+		Log.d(DEBUG_TAG, "Gateway connection closed");
+		
+		// Notify disconnection
 		if (activity != null) {
 			activity.runOnUiThread(new Runnable() {
 				@Override
@@ -161,7 +174,9 @@ public class LightExecutor implements Runnable {
 	protected String request(String req) {
 		try {
 			sock.write(encoder.encode(CharBuffer.wrap(req+SRVRPL_END)));
-			return getReply();
+			// keepalive does not expect a reply
+			if (! req.equals(SRVCMD_KEEPALIVE))
+				return getReply();
 		} catch (IOException exc) {
 			Log.w(DEBUG_TAG, "Cannot write request: " + exc.getMessage());
 			if (! sock.isConnected())
@@ -189,6 +204,8 @@ public class LightExecutor implements Runnable {
 			
 			if (cmd != null) {
 				Log.d(DEBUG_TAG, "Processing command: " + cmd.type);
+				// alive timer is reset
+				alivetime = LightCommandQueue.getTimestamp();
 				
 				switch (cmd.type) {
 					case SET_COLOR:
@@ -213,6 +230,14 @@ public class LightExecutor implements Runnable {
 							break;
 						parse_state(color_r, ison_r);
 						break;
+				}
+			} else {
+				// Check if we need to send keep alive
+				long curtime = LightCommandQueue.getTimestamp();
+				if (sock.isConnected() && 
+						(curtime - alivetime)/1000 >= KEEP_ALIVE_SECS) {
+					request(SRVCMD_KEEPALIVE);
+					alivetime = curtime;
 				}
 			}
 			
