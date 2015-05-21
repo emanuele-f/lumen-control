@@ -168,10 +168,10 @@ function action_consumer()
             status_on = true;
             
             // decide what "on" means
-            if (status_mode == STATUS_MODE_COLOR)
-                lumen.color(status_mode.c, status_color.m,
-                        status_color.y, status_color.w, _pending_done);
-            else if (status_mode == STATUS_MODE_WARM)
+            if (status_mode == STATUS_MODE_COLOR) {
+                cmyw = rgb_to_cmyw(action_color_val);
+                lumen.color(cmyw.c, cmyw.m, cmyw.y, cmyw.w, _pending_done);
+            } else if (status_mode == STATUS_MODE_WARM)
                 lumen.warmWhite(action_warm_val, _pending_done);
             else if (status_mode == STATUS_MODE_DISCO)
                 lumen.disco2Mode(_pending_done);
@@ -191,7 +191,9 @@ function action_consumer()
         //~ console.log("C:"+cmyw.c + " M:"+cmyw.m + " Y:"+cmyw.y + " W:"+cmyw.w);
         lumen.color(cmyw.c, cmyw.m, cmyw.y, cmyw.w, function () {
             status_mode = STATUS_MODE_COLOR;
-            status_color = action_color_val;
+            status_color.r = action_color_val.r;
+            status_color.g = action_color_val.g;
+            status_color.b = action_color_val.b;
             action_pending = false;
         });
     } else if (action == ACTION_WARM) {
