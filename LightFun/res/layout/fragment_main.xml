@@ -9,16 +9,32 @@
     android:paddingTop="@dimen/activity_vertical_margin"
     tools:context="com.emanuelef.lightfun.MainActivity$PlaceholderFragment" >
     
-    <ToggleButton
-        android:id="@+id/onoff"
-        android:textOn="I"
-        android:textOff="O"
-    	android:layout_width="wrap_content"
-    	android:layout_height="wrap_content"/>
+    <LinearLayout android:orientation="horizontal"
+        android:id="@+id/linabove"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        >
+        <ToggleButton
+        	android:id="@+id/constatus"
+        	android:textOn="Connected"
+        	android:textOff="Offline  "
+        	android:clickable="false"
+        	android:checked="false"
+    		android:layout_width="wrap_content"
+    		android:layout_height="wrap_content"/>
     
+	    <ToggleButton
+	        android:id="@+id/onoff"
+	        android:textOn="On "
+	        android:textOff="Off"
+	        android:checked="false"
+	    	android:layout_width="wrap_content"
+	    	android:layout_height="wrap_content"/>
+    </LinearLayout>
+
     <LinearLayout android:orientation="vertical"
         android:gravity="center_horizontal"
-        android:layout_below="@id/onoff"
+        android:layout_below="@id/linabove"
         android:layout_width="match_parent"
         android:layout_height="wrap_content">
 	    <com.larswerkman.holocolorpicker.ColorPicker

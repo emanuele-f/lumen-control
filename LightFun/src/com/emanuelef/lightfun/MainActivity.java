@@ -68,7 +68,7 @@ public class MainActivity extends AppCompatActivity implements OnColorChangedLis
 	
 	@Override
 	public void onColorChanged(int color) {
-		fragment.unchanged_color = false;
+		fragment.modified = true;
 		bulb.setColor(color);
 	}
 
@@ -79,28 +79,33 @@ public class MainActivity extends AppCompatActivity implements OnColorChangedLis
 	
 	@Override
 	public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-		// onoff button change
-		fragment.unchanged_button = false;
-		bulb.setOn(isChecked);
+		switch (buttonView.getId()) {
+		case R.id.onoff:
+			fragment.modified = true;
+			bulb.setOn(isChecked);
+			break;
+		}
+		
 	}
 	
 	@Override
 	public void onInitState(LightState state) {
-		if (fragment.unchanged_color)
+		if (! fragment.modified) {
 			fragment.picker.setColor(state.color);
-		if (fragment.unchanged_button)
 			fragment.onoff.setChecked(state.ison);
+		}
 	}
 
 	@Override
 	public void onConnect() {
 		bulb.queryState();
+		fragment.constatus.setChecked(true);
 	}
 
 	@Override
 	public void onDisconnect() {
 		// TODO Auto-generated method stub
-		
+		fragment.constatus.setChecked(false);
 	}
 
 	/**
@@ -108,9 +113,9 @@ public class MainActivity extends AppCompatActivity implements OnColorChangedLis
 	 */
 	public static class PlaceholderFragment extends Fragment {
 		// Used to get initial state
-		boolean unchanged_button = true;
-		boolean unchanged_color = true;
+		boolean modified = false;
 		ToggleButton onoff;
+		ToggleButton constatus;
 		ColorPicker picker;
 		BrightnessBar brbar;
 		
@@ -132,9 +137,10 @@ public class MainActivity extends AppCompatActivity implements OnColorChangedLis
 			brbar = (BrightnessBar) rootView.findViewById(R.id.brbar);
 			brbar.setOnBrightnessBarChangeLister(activity);
 			
-			// Setup onoff button
+			// Setup buttons
 			onoff = (ToggleButton) rootView.findViewById(R.id.onoff);
 			onoff.setOnCheckedChangeListener(activity);
+			constatus = (ToggleButton) rootView.findViewById(R.id.constatus);
 
 			return rootView;
 		}
