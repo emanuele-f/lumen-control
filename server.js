@@ -44,7 +44,7 @@ var KEEP_ALIVE_LIMIT = 10;              // seconds
 // :: status modes ::
 var STATUS_MODE_WARM = "warm";
 var STATUS_MODE_COLOR = "color";
-var STATUS_MODE_DISCO = "disco";        // TODO link to disco2
+var STATUS_MODE_DISCO = "disco";
 var STATUS_MODE_SOFT = "soft";          // TODO implement soft color change
 
 // :: server replies codes ::
@@ -63,6 +63,7 @@ var COMMAND_ON = "/on";
 var COMMAND_OFF = "/off";
 var COMMAND_COLOR = "/rgb";
 var COMMAND_WARM = "/warm";
+var COMMAND_DISCO = "/disco";
 
 // :: server response to commands ::
 var RESPONSE_OK = "OK";
@@ -75,7 +76,7 @@ var RESPONSE_ALIVE = "+";
 var ACTION_TURN = 1;
 var ACTION_COLOR = 2;
 var ACTION_WARM = 3;
-var ACTION_TURN_V;
+var ACTION_DISCO = 4;
 
 // :: bulb internal state clone ::
 var status_mode = STATUS_MODE_WARM;
@@ -94,8 +95,9 @@ var partial = "";                       // holds partial responses
 // internal request state: ensure only one applies
 var action_queue = [];
 var action_pending = false;
-var action_color_val = null;
-var action_warm_val = null
+var action_color_val;
+var action_warm_val;
+var action_turn_val;
 
 function get_system_seconds()
 {
@@ -162,11 +164,11 @@ function action_consumer()
     action_pending = true;
     
     if (action == ACTION_TURN) {
-        if (ACTION_TURN_V == "on") {
+        if (action_turn_val == "on") {
             status_on = true;
             
             // decide what "on" means
-            if (STATUS_MODE == STATUS_MODE_COLOR)
+            if (status_mode == STATUS_MODE_COLOR)
                 lumen.color(status_mode.c, status_color.m,
                         status_color.y, status_color.w, _pending_done);
             else if (status_mode == STATUS_MODE_WARM)
@@ -196,6 +198,11 @@ function action_consumer()
         lumen.warmWhite(action_warm_val, function () {
             status_mode = STATUS_MODE_WARM;
             status_warm = action_warm_val;
+            action_pending = false;
+        });
+    } else if (action == ACTION_DISCO) {
+        lumen.disco2Mode(function() {
+            status_mode = STATUS_MODE_DISCO;
             action_pending = false;
         });
     } else {
@@ -258,10 +265,10 @@ function process_request(request)
     // Imperative commands
     if (pathname == COMMAND_ON) {
         action = ACTION_TURN;
-        ACTION_TURN_V = "on"
+        action_turn_val = "on"
     } else if (pathname == COMMAND_OFF) {
         action = ACTION_TURN;
-        ACTION_TURN_V = "off"
+        action_turn_val = "off"
     } else if (pathname == COMMAND_COLOR) {
         if (query == null)
             return RESPONSE_ERROR;
@@ -282,6 +289,8 @@ function process_request(request)
             
         action_warm_val = b;
         action = ACTION_WARM;
+    } else if (pathname == COMMAND_DISCO) {
+        action = ACTION_DISCO;
     }
     
     // Let's see if we can fulfil request now, otherwise enqueue
@@ -327,21 +336,32 @@ function onDiscover(lume) {
         console.log('connected!');
         lumen.discoverServicesAndCharacteristics(function(){
             lumen.setup(function() {
-                lumen.readState(function(state) {
-                    console.log("initial state read, device is ready!");
-                    cmyw = {
-                        c: state.colorC,
-                        m: state.colorM,
-                        y: state.colorY,
-                        w: state.colorW
-                    }
-                    status_color = cmyw_to_rgb(cmyw);
-                    console.log("C:"+cmyw.c + " M:"+cmyw.m + " Y:"+cmyw.y + " W:"+cmyw.w);
-                    console.log("R:"+status_color.r + " G:"+status_color.g + " B:"+status_color.b);
-                    status_on = state.on;
+                if (! device_synched)
+                    // need to get device current configuration
+                    lumen.readState(function(state) {
+                        // fill status_mode variable and related
+                        if (state.mode == 'color') {
+                            cmyw = {
+                                c: state.colorC,
+                                m: state.colorM,
+                                y: state.colorY,
+                                w: state.colorW
+                            }
+                            status_mode = STATUS_MODE_COLOR;
+                            status_color = cmyw_to_rgb(cmyw);
+                        } else if (state.mode == 'warmWhite') {
+                            status_mode = STATUS_MODE_WARM;
+                            status_warm = state.warmWhitePercentage;
+                        } else if (state.mode == 'disco2') {
+                            status_mode = STATUS_MODE_DISCO;
+                        }
+                        status_on = state.on;
+                        device_synched = true;
+                        device_ready = true;
+                        console.log("Initial state: r="+status_color.r + " g="+status_color.g + " b="+status_color.b);
+                    });
+                else
                     device_ready = true;
-                    device_synched = true;
-                });
             });
         });
     });
