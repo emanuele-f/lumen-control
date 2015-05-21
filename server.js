@@ -59,6 +59,7 @@ var RESPONSE_OK = "OK";
 var RESPONSE_PENDING = "PENDING";
 var RESPONSE_ERROR = "BAD REQUEST";
 var RESPONSE_OFFLINE = "OFFLINE";
+var RESPONSE_ALIVE = "+";
 
 // groups compatible actions -> performs only the last one
 var ACTION_TURN = 1;
@@ -204,7 +205,7 @@ function process_request(request)
     // Query commands
     if (pathname == "") {
         // just to keep alive
-        return;
+        return RESPONSE_ALIVE;
     } else if (pathname == "/status") {
         if (DEVICE_READY == null) {
             return DEVICE_STATUS_OFFLINE;

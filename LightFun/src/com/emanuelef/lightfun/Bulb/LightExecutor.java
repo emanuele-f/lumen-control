@@ -3,7 +3,6 @@ package com.emanuelef.lightfun.Bulb;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
-import java.net.SocketException;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.channels.SocketChannel;
@@ -40,7 +39,6 @@ public class LightExecutor implements Runnable {
 	static final String SRVRPL_OFFLINE = "OFFLINE";
 	
 	SocketChannel sock;
-	
 	boolean dorun = true;
 	LightCommandQueue queue;
 	onLightStateReceiver receiver;
@@ -58,29 +56,50 @@ public class LightExecutor implements Runnable {
 		
 		Charset charset = Charset.forName("UTF-8");
 		this.encoder = charset.newEncoder();
-		this.decoder = charset.newDecoder();
+		this.decoder = charset.newDecoder();		
+		this.addr = new InetSocketAddress(host, port);
+		this.sock = null;
+	}
+	
+	public boolean isConnected() {
+		if (this.sock != null)
+			return this.sock.isConnected();
+		return false;
+	}
+	
+	// tries to connect. Calls onConnect. Returns status.
+	protected boolean connect() {
+		boolean ok = false;
 		
 		try {
 			this.sock = SocketChannel.open();
 			sock.configureBlocking(true);
+			sock.socket().setTcpNoDelay(true);
+			sock.connect(addr);
+			ok = true;
 		} catch (IOException exc) {
 			Log.e(DEBUG_TAG, exc.getMessage());
-			dorun = false;
-			return;
+			sock = null;
 		}
 		
-		this.addr = new InetSocketAddress(host, port);
+		if (ok) {
+			alivetime = LightCommandQueue.getTimestamp();
+			onConnect();
+		}
+		
+		return ok;
 	}
 	
-	protected void onConnect() {
-		Log.d(DEBUG_TAG, "Gateway connection opened");
-		alivetime = LightCommandQueue.getTimestamp();
-		try {
-			sock.socket().setTcpNoDelay(true);
-		} catch (SocketException exc) {
-			// may cause keepalive troubles
-			Log.w(DEBUG_TAG, "Cannot set socket 'NoDelay' mode");
+	protected void disconnect() {
+		if (isConnected()) {
+			try { sock.close(); sock=null; } catch (IOException e) {}
+			onDisconnect();
 		}
+	}
+	
+	// called internally on connection
+	private void onConnect() {
+		Log.d(DEBUG_TAG, "Gateway connection opened");
 		
 		// Notify connection
 		if (activity != null) {
@@ -93,7 +112,8 @@ public class LightExecutor implements Runnable {
 		}
 	}
 	
-	protected void onDisconnect() {
+	// called internally on disconnection
+	private void onDisconnect() {
 		Log.d(DEBUG_TAG, "Gateway connection closed");
 		
 		// Notify disconnection
@@ -105,10 +125,6 @@ public class LightExecutor implements Runnable {
 				}
 			});
 		}
-	}
-	
-	protected void onMessage(String message) {
-		// TODO implement bidirectional logic
 	}
 	
 	// parse state response and notify 
@@ -157,6 +173,9 @@ public class LightExecutor implements Runnable {
 			rbuf.flip();		// make the buffer ready for reading
 			if (c > 0) {
 				reply += decoder.decode(rbuf);
+			} else if (c < 0) {
+				disconnect();
+				return null;
 			}
 			i++;
 		} while (!reply.contains(SRVRPL_END) && i <= maxiter);
@@ -174,13 +193,10 @@ public class LightExecutor implements Runnable {
 	protected String request(String req) {
 		try {
 			sock.write(encoder.encode(CharBuffer.wrap(req+SRVRPL_END)));
-			// keepalive does not expect a reply
-			if (! req.equals(SRVCMD_KEEPALIVE))
-				return getReply();
+			return getReply();
 		} catch (IOException exc) {
 			Log.w(DEBUG_TAG, "Cannot write request: " + exc.getMessage());
-			if (! sock.isConnected())
-				onDisconnect();
+			disconnect();
 		}
 		return null;
 	}
@@ -190,14 +206,10 @@ public class LightExecutor implements Runnable {
 		LightCommand cmd;
 		
 		while (dorun) {
-			if (! sock.isConnected()) {
-				try {
-					sock.connect(addr);
-					onConnect();
-				} catch (IOException e) {}
-			}
+			if (! isConnected())
+				connect();
 			
-			if (sock.isConnected())
+			if (isConnected())
 				cmd = queue.fetchNext();
 			else
 				cmd = null;
@@ -234,7 +246,7 @@ public class LightExecutor implements Runnable {
 			} else {
 				// Check if we need to send keep alive
 				long curtime = LightCommandQueue.getTimestamp();
-				if (sock.isConnected() && 
+				if (isConnected() && 
 						(curtime - alivetime)/1000 >= KEEP_ALIVE_SECS) {
 					request(SRVCMD_KEEPALIVE);
 					alivetime = curtime;
@@ -244,7 +256,7 @@ public class LightExecutor implements Runnable {
 			try { Thread.sleep(SLEEP_MILLI); } catch (InterruptedException exc) {}
 		}
 		
-		try { sock.close(); } catch (IOException exc) {}
+		disconnect();
 	}
 	
 	public void end() {
