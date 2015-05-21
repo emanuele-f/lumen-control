@@ -149,8 +149,24 @@ function put_action(action)
         action_queue.push(action);
 }
 
-function _pending_done () {
-    action_pending = false;
+// send internal status and set on the bulb
+function mystatus_to_bulb(callback) {
+    if (status_on) {
+        if (status_mode == STATUS_MODE_COLOR) {
+            cmyw = rgb_to_cmyw(action_color_val);
+            lumen.color(cmyw.c, cmyw.m, cmyw.y, cmyw.w, callback);
+        } else if (status_mode == STATUS_MODE_WARM)
+            lumen.warmWhite(action_warm_val, callback);
+        else if (status_mode == STATUS_MODE_DISCO)
+            lumen.disco2Mode(callback);
+        //else if (status_mode == STATUS_MODE_SOFT) TODO
+        else {
+            console.log("Unknown mode:", status_mode);
+            lumen.turnOn(callback);
+        }
+    } else {
+        lumen.turnOff(callback);
+    }
 }
 
 // called regurarly to perform actions. use action_pending to serialize
@@ -164,28 +180,14 @@ function action_consumer()
     action_pending = true;
     
     if (action == ACTION_TURN) {
-        if (action_turn_val == "on") {
+        if (action_turn_val == "on")
             status_on = true;
+        else
+            status_on = false;
             
-            // decide what "on" means
-            if (status_mode == STATUS_MODE_COLOR) {
-                cmyw = rgb_to_cmyw(action_color_val);
-                lumen.color(cmyw.c, cmyw.m, cmyw.y, cmyw.w, _pending_done);
-            } else if (status_mode == STATUS_MODE_WARM)
-                lumen.warmWhite(action_warm_val, _pending_done);
-            else if (status_mode == STATUS_MODE_DISCO)
-                lumen.disco2Mode(_pending_done);
-            //else if (status_mode == STATUS_MODE_SOFT) TODO
-            else {
-                console.log("Unknown mode:", status_mode);
-                lumen.turnOn(_pending_done);
-            }
-        } else  {
-            lumen.turnOff(function () {
-                status_on = false;
-                action_pending = false;
-            });
-        }
+        mystatus_to_bulb(function () {
+            action_pending = false;
+        });
     } else if (action == ACTION_COLOR) {
         cmyw = rgb_to_cmyw(action_color_val);
         //~ console.log("C:"+cmyw.c + " M:"+cmyw.m + " Y:"+cmyw.y + " W:"+cmyw.w);
@@ -362,8 +364,12 @@ function onDiscover(lume) {
                         device_ready = true;
                         console.log("Initial state: r="+status_color.r + " g="+status_color.g + " b="+status_color.b);
                     });
-                else
-                    device_ready = true;
+                else {
+                    // need to set my device configuration
+                    mystatus_to_bulb(function() {
+                        device_ready = true;
+                    });
+                }
             });
         });
     });
