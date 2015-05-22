@@ -33,14 +33,14 @@
  
 // :: modules ::
 var net = require('net');
-var Lumen = require("lumen");
+var Lumen = require("/home/emanuele/src/node-lumen/index.js");
 
 // :: server constraints ::
 var CONSUME_DELAY = 10;
 var SERVER_PORT = 7878;
 var DATA_MARKER = "$";
 var KEEP_ALIVE_LIMIT = 10;              // seconds
-var SOFTMODE_COLOR_TICK = 0.02;
+var SOFTMODE_COLOR_TICK = 1;
 
 // :: status modes ::
 var STATUS_MODE_WARM = "warm";
@@ -98,16 +98,13 @@ var clsock = null;                      // client socket - null if disconnected
 var lumen = null;                       // holds connected buld interface - null if disconnected
 var partial = "";                       // holds partial responses
 // internal request state: ensure only one applies
-var action_queue = [];
+var action_queue = [];                  // holds {code: ACTION_*, value: [action_specific]}
 var action_pending = false;
-var action_color_val = {r:0, g:0, b:0};
-var action_warm_val = 0;
-var action_turn_val = "on";
 // soft mode status
 var softmode_step = 0;
-var softmode_r = 0.5;
-var softmode_g = 0.5;
-var softmode_b = 0.5;
+var softmode_r = 0;
+var softmode_g = 0;
+var softmode_b = 0;
 
 function get_system_seconds()
 {
@@ -151,6 +148,11 @@ function cmyw_to_rgb(cmyw)
     };
 }
 
+function rgb_to_99(color)
+{
+    return [color.r*99, color.g*99, color.b*99]
+}
+
 // put an action in the queue, if not already there
 function put_action(action)
 {
@@ -162,10 +164,9 @@ function put_action(action)
 function mystatus_to_bulb(callback) {
     if (status_on) {
         if (status_mode == STATUS_MODE_COLOR) {
-            cmyw = rgb_to_cmyw(action_color_val);
-            lumen.color(cmyw.c, cmyw.m, cmyw.y, cmyw.w, callback);
+            lumen.rgbColor(rgb_to_99(status_color), callback);
         } else if (status_mode == STATUS_MODE_WARM)
-            lumen.warmWhite(action_warm_val, callback);
+            lumen.warmWhite(status_warm, callback);
         else if (status_mode == STATUS_MODE_DISCO)
             lumen.disco2Mode(callback);
         else if (status_mode == STATUS_MODE_COOL)
@@ -195,11 +196,13 @@ function action_consumer()
         // nothing to do
         return;
     
-    var action = action_queue.pop();
+    var action_q = action_queue.pop();
+    var action = action_q.code;
+    var action_val = action_q.value;
     action_pending = true;
     
     if (action == ACTION_TURN) {
-        if (action_turn_val == "on")
+        if (action_val == "on")
             status_on = true;
         else
             status_on = false;
@@ -208,19 +211,17 @@ function action_consumer()
             action_pending = false;
         });
     } else if (action == ACTION_COLOR) {
-        var cmyw = rgb_to_cmyw(action_color_val);
-        //~ console.log("C:"+cmyw.c + " M:"+cmyw.m + " Y:"+cmyw.y + " W:"+cmyw.w);
-        lumen.color(cmyw.c, cmyw.m, cmyw.y, cmyw.w, function () {
+        lumen.rgbColor(rgb_to_99(action_val), function() {
             status_mode = STATUS_MODE_COLOR;
-            status_color.r = action_color_val.r;
-            status_color.g = action_color_val.g;
-            status_color.b = action_color_val.b;
+            status_color.r = action_val.r;
+            status_color.g = action_val.g;
+            status_color.b = action_val.b;
             action_pending = false;
         });
     } else if (action == ACTION_WARM) {
-        lumen.warmWhite(action_warm_val, function () {
+        lumen.warmWhite(action_val, function () {
             status_mode = STATUS_MODE_WARM;
-            status_warm = action_warm_val;
+            status_warm = action_val;
             action_pending = false;
         });
     } else if (action == ACTION_DISCO) {
@@ -239,20 +240,19 @@ function action_consumer()
     }
 }
 
-// this mode could be ok, but it isn't...use cool mode instead
 function tick_soft_mode()
 {
     // r -> y -> g -> p -> b -> m -> r
-    var MIN = 0.5;
-    var MAX = 1.0;
+    var MIN = 0;
+    var MAX = 99;
     
-    if (action_pending)
+    if (action_pending || status_on == false)
         return;
     action_pending = true;
     
     if (softmode_step<=1 && softmode_r != MAX) {
         softmode_step = 1;
-        softmode_r = Math.min(1.0, softmode_r + SOFTMODE_COLOR_TICK);
+        softmode_r = Math.min(MAX, softmode_r + SOFTMODE_COLOR_TICK);
     } else if (softmode_step<=2 && softmode_g != MAX) {
         softmode_step = 2;
         softmode_g = Math.min(MAX, softmode_g + SOFTMODE_COLOR_TICK);
@@ -267,7 +267,7 @@ function tick_soft_mode()
         softmode_g = Math.max(MIN, softmode_g - SOFTMODE_COLOR_TICK);
     } else if (softmode_step<=6 && softmode_r != MAX) {
         softmode_step = 6;
-        softmode_r = Math.min(1.0, softmode_r + SOFTMODE_COLOR_TICK);
+        softmode_r = Math.min(MAX, softmode_r + SOFTMODE_COLOR_TICK);
     } else if (softmode_step<=7 && softmode_b != MIN) {
         softmode_step = 7;
         softmode_b = Math.max(MIN, softmode_b - SOFTMODE_COLOR_TICK);
@@ -279,8 +279,7 @@ function tick_soft_mode()
         softmode_step = 0;
     }
     
-    var cmyw = rgb_to_cmyw({r:softmode_r, g:softmode_g, b:softmode_b});
-    lumen.color(cmyw.c, cmyw.m, cmyw.y, cmyw.w, function () {
+    lumen.rgbColor([softmode_r, softmode_g, softmode_b], function () {
         status_color.r = softmode_r;
         status_color.g = softmode_g;
         status_color.b = softmode_b;
@@ -315,6 +314,7 @@ function process_request(request)
     var pathname = parsed.path;
     var query = parsed.query;
     var action = null;
+    var action_val = null;
     
     // Query commands
     if (pathname == "") {
@@ -343,20 +343,19 @@ function process_request(request)
     // Imperative commands
     if (pathname == COMMAND_ON) {
         action = ACTION_TURN;
-        action_turn_val = "on"
+        action_val = "on"
     } else if (pathname == COMMAND_OFF) {
         action = ACTION_TURN;
-        action_turn_val = "off"
+        action_val = "off"
     } else if (pathname == COMMAND_COLOR) {
         if (query == null)
             return RESPONSE_ERROR;
             
         if (query.length != 8 || query.slice(0,2) != "0x")
             return RESPONSE_ERROR;
-        
-        action_color_val = xrgb_to_rgb(query);
-        //~ console.log("R:"+action_color_val.r + " G:"+action_color_val.g + " B:"+action_color_val.b);
+    
         action = ACTION_COLOR;
+        action_val = xrgb_to_rgb(query);
     } else if (pathname == COMMAND_WARM) {
         if (query == null)
             return RESPONSE_ERROR;
@@ -365,7 +364,7 @@ function process_request(request)
         if (b < 0 || b > 100)
             return RESPONSE_ERROR;
             
-        action_warm_val = b;
+        action_val = b;
         action = ACTION_WARM;
     } else if (pathname == COMMAND_DISCO) {
         action = ACTION_DISCO;
@@ -379,7 +378,8 @@ function process_request(request)
     
     // Let's see if we can fulfil request now, otherwise enqueue
     if (action != null) {
-        put_action(action);
+        var action_q = {code: action, value:action_val};        
+        put_action(action_q);
         
         if (device_ready)
             return RESPONSE_OK;
@@ -410,21 +410,22 @@ function onRequest(request)
     }
 }
 
-function onDiscover(lume) {
-    lumen = lume;
+function onDiscover(bulb) {
+    lumen = bulb;
     console.log("Lumen found: " + lumen.toString());
     
-    lumen.connect(function () {});
+    bulb.connect(function () {});
     
-    lumen.on('connect', function() {
+    bulb.on('connect', function() {
         console.log('connected!');
-        lumen.discoverServicesAndCharacteristics(function(){
-            lumen.setup(function() {
+        bulb.discoverServicesAndCharacteristics(function(){
+            bulb.setup(function() {
                 if (! device_synched)
                     // need to get device current configuration
-                    lumen.readState(function(state) {
+                    bulb.readState(function(state) {
                         // fill status_mode variable and related
                         if (state.mode == 'color') {
+                            // TODO use decrypted rgb
                             cmyw = {
                                 c: state.colorC,
                                 m: state.colorM,
@@ -456,10 +457,12 @@ function onDiscover(lume) {
             });
         });
     });
-    lumen.on('disconnect', function() {
+    bulb.on('disconnect', function() {
         console.log("disconnected");
         device_ready = false;
-        Lumen.discover(onDiscover);
+        lumen = null;
+        // TODO reconnect in someway
+        //~ Lumen.discover(onDiscover);
     });
 }
 
