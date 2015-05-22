@@ -24,6 +24,7 @@ import com.emanuelef.lightfun.Bulb.LightController.onLightStateReceiver;
 public class LightExecutor implements Runnable {
 	static final String DEBUG_TAG = "LightExecutor";
 	static final int SLEEP_MILLI = 100;
+	static final int CONRETRY_TIMEOUT = 3000;
 	static final int KEEP_ALIVE_SECS = 5;
 	
 	// Protocol specs
@@ -207,7 +208,8 @@ public class LightExecutor implements Runnable {
 		
 		while (dorun) {
 			if (! isConnected())
-				connect();
+				if (! connect())
+					try { Thread.sleep(CONRETRY_TIMEOUT); } catch (InterruptedException exc) {}
 			
 			if (isConnected())
 				cmd = queue.fetchNext();
