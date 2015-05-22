@@ -113,16 +113,17 @@ public class MainActivity extends AppCompatActivity implements OnColorChangedLis
 	
 	@Override
 	public void onInitState(LightState state) {
-		if (! fragment.modified) {
+		// TODO also get and set current mode and brightness
+		if (! fragment.modified)
 			fragment.picker.setColor(state.color);
-			fragment.onoff.setChecked(state.ison);
-		}
+		fragment.onoff.setChecked(state.ison);
 	}
 
 	@Override
 	public void onConnect() {
 		bulb.queryState();
 		fragment.constatus.setChecked(true);
+		fragment.modified = false;
 	}
 
 	@Override
