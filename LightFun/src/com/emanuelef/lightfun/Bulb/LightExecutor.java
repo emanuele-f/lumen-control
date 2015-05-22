@@ -16,6 +16,7 @@ import android.util.Log;
 
 import com.emanuelef.lightfun.Bulb.LightCommands.ColorCommand;
 import com.emanuelef.lightfun.Bulb.LightCommands.LightCommand;
+import com.emanuelef.lightfun.Bulb.LightCommands.ModeCommand;
 import com.emanuelef.lightfun.Bulb.LightCommands.OnOffCommand;
 import com.emanuelef.lightfun.Bulb.LightCommands.WarmCommand;
 import com.emanuelef.lightfun.Bulb.LightController.LightState;
@@ -33,6 +34,9 @@ public class LightExecutor implements Runnable {
 	static final String SRVCMD_WARM = "/warm?";
 	static final String SRVCMD_ON = "/on";
 	static final String SRVCMD_OFF = "/off";
+	static final String SRVCMD_MODECOOL = "/cool";
+	static final String SRVCMD_MODEDISCO = "/disco";
+	static final String SRVCMD_MODESOFT = "/soft";
 	static final String SRVQRY_COLOR = "/color";
 	static final String SRVQRY_STATE = "/ison";
 	static final String SRVRPL_END = "$";
@@ -236,6 +240,20 @@ public class LightExecutor implements Runnable {
 					case SET_WARM:
 						WarmCommand warm = (WarmCommand) cmd;
 						request(SRVCMD_WARM + warm.brightness);
+						break;
+					case SET_MODE:
+						ModeCommand modecmd = (ModeCommand) cmd;
+						switch (modecmd.mode) {
+						case MODE_COOL:
+							request(SRVCMD_MODECOOL);
+							break;
+						case MODE_DISCO:
+							request(SRVCMD_MODEDISCO);
+							break;
+						case MODE_SOFT:
+							request(SRVCMD_MODESOFT);
+							break;
+						}
 						break;
 					case QUERY_STATE:
 						String color_r = request(SRVQRY_COLOR);

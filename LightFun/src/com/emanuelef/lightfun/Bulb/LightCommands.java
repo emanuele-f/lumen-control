@@ -3,7 +3,8 @@ package com.emanuelef.lightfun.Bulb;
 import android.graphics.Color;
 
 public class LightCommands {
-	public enum Types { SET_COLOR, SET_ONOFF, SET_WARM, QUERY_STATE };
+	public enum Types { SET_COLOR, SET_ONOFF, SET_WARM, SET_MODE, QUERY_STATE };
+	public enum Modes { MODE_DISCO, MODE_COOL, MODE_SOFT };
 	
 	public static class LightCommand {
 		protected Types type;
@@ -40,6 +41,14 @@ public class LightCommands {
 		
 		public WarmCommand() {
 			this.type = Types.SET_WARM;
+		}
+	}
+	
+	public static class ModeCommand extends LightCommand {
+		public Modes mode;
+		
+		public ModeCommand() {
+			this.type = Types.SET_MODE;
 		}
 	}
 }

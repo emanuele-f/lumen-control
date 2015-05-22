@@ -4,12 +4,25 @@
     <string name="app_name">LightFun</string>
     <string name="hello_world">Hello world!</string>
     <string name="action_settings">Settings</string>
+    
     <string name="blacksilver">blacksilver</string>
     <string name="raspberry">raspberry</string>
-    
     <string-array name="hosts">
         <item>@string/raspberry</item>
 		<item>@string/blacksilver</item>
+	</string-array>
+	
+    <string name="mode_color">color</string>
+    <string name="mode_warm">warm</string>
+    <string name="mode_cool">cool</string>
+    <string name="mode_disco">disco</string>
+    <string name="mode_soft">soft</string>
+    <string-array name="modes">
+        <item>@string/mode_color</item>
+        <item>@string/mode_warm</item>
+        <item>@string/mode_cool</item>
+		<item>@string/mode_disco</item>
+		<item>@string/mode_soft</item>
 	</string-array>
 
 </resources>

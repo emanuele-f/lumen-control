@@ -14,6 +14,12 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         >
+        <Spinner
+    		android:id="@+id/hostsel"
+    		android:entries="@array/hosts"
+    		android:layout_width="wrap_content"
+    		android:layout_height="wrap_content">
+	    </Spinner>
         <ToggleButton
         	android:id="@+id/constatus"
         	android:textOn="Connected"
@@ -22,22 +28,19 @@
         	android:checked="false"
     		android:layout_width="wrap_content"
     		android:layout_height="wrap_content"/>
-    
-	    <ToggleButton
+        <Spinner
+    		android:id="@+id/modesel"
+    		android:entries="@array/modes"
+    		android:layout_width="wrap_content"
+    		android:layout_height="wrap_content">
+	    </Spinner>
+        <ToggleButton
 	        android:id="@+id/onoff"
 	        android:textOn="On "
 	        android:textOff="Off"
 	        android:checked="false"
 	    	android:layout_width="wrap_content"
 	    	android:layout_height="wrap_content"/>
-	    
-	    <Spinner
-    		android:id="@+id/hostsel"
-    		android:entries="@array/hosts"
-    		android:layout_width="wrap_content"
-    		android:layout_height="wrap_content">
-	    </Spinner>
-    		
     </LinearLayout>
 
     <LinearLayout android:orientation="vertical"

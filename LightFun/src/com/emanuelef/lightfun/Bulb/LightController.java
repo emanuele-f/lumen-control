@@ -5,6 +5,8 @@ import android.graphics.Color;
 
 import com.emanuelef.lightfun.Bulb.LightCommands.ColorCommand;
 import com.emanuelef.lightfun.Bulb.LightCommands.LightCommand;
+import com.emanuelef.lightfun.Bulb.LightCommands.ModeCommand;
+import com.emanuelef.lightfun.Bulb.LightCommands.Modes;
 import com.emanuelef.lightfun.Bulb.LightCommands.OnOffCommand;
 import com.emanuelef.lightfun.Bulb.LightCommands.Types;
 import com.emanuelef.lightfun.Bulb.LightCommands.WarmCommand;
@@ -118,6 +120,32 @@ public class LightController {
 			queue.unlock();
 		}
 	}
+	
+	private void setMode(Modes mode) {
+		final long tstamp = LightCommandQueue.getTimestamp();
+		
+		queue.lock();
+		try {
+			ModeCommand cmd = (ModeCommand) queue.XGetSingle(Types.SET_MODE);
+			
+			if (cmd != null) {
+				// Reset
+				cmd.time = tstamp;
+				cmd.mode = mode;
+			} else {
+				cmd = new ModeCommand();
+				cmd.time = tstamp;
+				cmd.mode = mode;
+				queue.XPush(cmd);
+			}
+		} finally {
+			queue.unlock();
+		}
+	}
+	
+	public void setCoolMode() { setMode(Modes.MODE_COOL); }
+	public void setDiscoMode() { setMode(Modes.MODE_DISCO); }
+	public void setSoftMode() { setMode(Modes.MODE_SOFT); }
 	
 	public void finish() {
 		consumer.end();
