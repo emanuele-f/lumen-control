@@ -10,8 +10,6 @@ import com.emanuelef.lightfun.Bulb.LightCommands.Types;
 import com.emanuelef.lightfun.Bulb.LightCommands.WarmCommand;
 
 public class LightController {
-	public static final String SERVER_HOST = "192.168.1.2";
-//	public static final String SERVER_HOST = "cdotslash.ns0.it";
 	public static final int SERVER_PORT = 7878;
 	protected LightCommandQueue queue;
 	private LightExecutor consumer;
@@ -27,9 +25,9 @@ public class LightController {
 		public int color;
 	}
 	
-	public LightController(onLightStateReceiver receiver, Activity activity) {
+	public LightController(onLightStateReceiver receiver, Activity activity, String host) {
 		queue = new LightCommandQueue();
-		consumer = new LightExecutor(queue, receiver, activity, SERVER_HOST, SERVER_PORT);
+		consumer = new LightExecutor(queue, receiver, activity, host, SERVER_PORT);
 		new Thread(consumer).start();
 	}
 	
