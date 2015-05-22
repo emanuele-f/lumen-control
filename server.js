@@ -40,12 +40,14 @@ var CONSUME_DELAY = 10;
 var SERVER_PORT = 7878;
 var DATA_MARKER = "$";
 var KEEP_ALIVE_LIMIT = 10;              // seconds
+var SOFTMODE_COLOR_TICK = 0.02;
 
 // :: status modes ::
 var STATUS_MODE_WARM = "warm";
 var STATUS_MODE_COLOR = "color";
 var STATUS_MODE_DISCO = "disco";
-var STATUS_MODE_SOFT = "soft";          // TODO implement soft color change
+var STATUS_MODE_SOFT = "soft";
+var STATUS_MODE_COOL = "cool";
 
 // :: server replies codes ::
 var REPLY_ON = "on";
@@ -64,6 +66,8 @@ var COMMAND_OFF = "/off";
 var COMMAND_COLOR = "/rgb";
 var COMMAND_WARM = "/warm";
 var COMMAND_DISCO = "/disco";
+var COMMAND_SOFT = "/soft";
+var COMMAND_COOL = "/cool";
 
 // :: server response to commands ::
 var RESPONSE_OK = "OK";
@@ -77,6 +81,7 @@ var ACTION_TURN = 1;
 var ACTION_COLOR = 2;
 var ACTION_WARM = 3;
 var ACTION_DISCO = 4;
+var ACTION_COOL = 5;
 
 // :: bulb internal state clone ::
 var status_mode = STATUS_MODE_WARM;
@@ -98,6 +103,11 @@ var action_pending = false;
 var action_color_val = {r:0, g:0, b:0};
 var action_warm_val = 0;
 var action_turn_val = "on";
+// soft mode status
+var softmode_step = 0;
+var softmode_r = 0.5;
+var softmode_g = 0.5;
+var softmode_b = 0.5;
 
 function get_system_seconds()
 {
@@ -115,9 +125,9 @@ function xrgb_to_rgb(hexstr)
 }
 
 function rgb_to_xrgb(rgb) {
-    return "0x" + ("00" + rgb.r.toString(16)).substr(-2) +
-            ("00" + rgb.g.toString(16)).substr(-2) +
-            ("00" + rgb.b.toString(16)).substr(-2)
+    return "0x" + ("00" + parseInt(rgb.r * 255).toString(16)).substr(-2) +
+            ("00" + parseInt(rgb.g * 255).toString(16)).substr(-2) +
+            ("00" + parseInt(rgb.b * 255).toString(16)).substr(-2)
 }
 
 function rgb_to_cmyw(rgb) {
@@ -134,11 +144,10 @@ function rgb_to_cmyw(rgb) {
 function cmyw_to_rgb(cmyw)
 {
     var k = 1-cmyw.w;
-    
     return {
-        r: (1-cmyw.c) * (1-k),
-        g: (1-cmyw.m) * (1-k),
-        b: (1-cmyw.y) * (1-k)
+        r: 1 - Math.min(1, cmyw.c * (1 - k) + k),
+        g: 1 - Math.min(1, cmyw.m * (1 - k) + k),
+        b: 1 - Math.min(1, cmyw.y * (1 - k) + k)
     };
 }
 
@@ -159,8 +168,12 @@ function mystatus_to_bulb(callback) {
             lumen.warmWhite(action_warm_val, callback);
         else if (status_mode == STATUS_MODE_DISCO)
             lumen.disco2Mode(callback);
-        //else if (status_mode == STATUS_MODE_SOFT) TODO
-        else {
+        else if (status_mode == STATUS_MODE_COOL)
+            lumen.coolMode(callback);
+        else if (status_mode == STATUS_MODE_SOFT) {
+            cmyw = rgb_to_cmyw({r:softmode_r, g:softmode_g, b:softmode_b});
+            lumen.color(cmyw.c, cmyw.m, cmyw.y, cmyw.w, callback);
+        } else {
             console.log("Unknown mode:", status_mode);
             lumen.turnOn(callback);
         }
@@ -172,6 +185,12 @@ function mystatus_to_bulb(callback) {
 // called regurarly to perform actions. use action_pending to serialize
 function action_consumer()
 {
+    if (action_queue.length==0 && status_mode==STATUS_MODE_SOFT) {
+        // soft mode custom logic
+        tick_soft_mode();
+        return;
+    }
+    
     if (! device_ready || action_pending || action_queue.length==0)
         // nothing to do
         return;
@@ -189,7 +208,7 @@ function action_consumer()
             action_pending = false;
         });
     } else if (action == ACTION_COLOR) {
-        cmyw = rgb_to_cmyw(action_color_val);
+        var cmyw = rgb_to_cmyw(action_color_val);
         //~ console.log("C:"+cmyw.c + " M:"+cmyw.m + " Y:"+cmyw.y + " W:"+cmyw.w);
         lumen.color(cmyw.c, cmyw.m, cmyw.y, cmyw.w, function () {
             status_mode = STATUS_MODE_COLOR;
@@ -209,10 +228,65 @@ function action_consumer()
             status_mode = STATUS_MODE_DISCO;
             action_pending = false;
         });
+    } else if (action == ACTION_COOL) {
+        lumen.coolMode(function() {
+            status_mode = STATUS_MODE_COOL;
+            action_pending = false;
+        });
     } else {
         console.log("Unknown action: "+action);
         action_pending = false;
     }
+}
+
+// this mode could be ok, but it isn't...use cool mode instead
+function tick_soft_mode()
+{
+    // r -> y -> g -> p -> b -> m -> r
+    var MIN = 0.5;
+    var MAX = 1.0;
+    
+    if (action_pending)
+        return;
+    action_pending = true;
+    
+    if (softmode_step<=1 && softmode_r != MAX) {
+        softmode_step = 1;
+        softmode_r = Math.min(1.0, softmode_r + SOFTMODE_COLOR_TICK);
+    } else if (softmode_step<=2 && softmode_g != MAX) {
+        softmode_step = 2;
+        softmode_g = Math.min(MAX, softmode_g + SOFTMODE_COLOR_TICK);
+    } else if (softmode_step<=3 && softmode_r != MIN) {
+        softmode_step = 3;
+        softmode_r = Math.max(MIN, softmode_r - SOFTMODE_COLOR_TICK);
+    } else if (softmode_step<=4 && softmode_b != MAX) {
+        softmode_step = 4;
+        softmode_b = Math.min(MAX, softmode_b + SOFTMODE_COLOR_TICK);
+    } else if (softmode_step<=5 && softmode_g != MIN) {
+        softmode_step = 5;
+        softmode_g = Math.max(MIN, softmode_g - SOFTMODE_COLOR_TICK);
+    } else if (softmode_step<=6 && softmode_r != MAX) {
+        softmode_step = 6;
+        softmode_r = Math.min(1.0, softmode_r + SOFTMODE_COLOR_TICK);
+    } else if (softmode_step<=7 && softmode_b != MIN) {
+        softmode_step = 7;
+        softmode_b = Math.max(MIN, softmode_b - SOFTMODE_COLOR_TICK);
+    } else if (softmode_step<=8 && softmode_r != MIN) {
+        softmode_step = 8;
+        softmode_r = Math.max(MIN, softmode_r - SOFTMODE_COLOR_TICK);
+    } else {
+        // again
+        softmode_step = 0;
+    }
+    
+    var cmyw = rgb_to_cmyw({r:softmode_r, g:softmode_g, b:softmode_b});
+    lumen.color(cmyw.c, cmyw.m, cmyw.y, cmyw.w, function () {
+        status_color.r = softmode_r;
+        status_color.g = softmode_g;
+        status_color.b = softmode_b;
+        action_pending = false;
+    });
+    //~ console.log("r:" + softmode_r + " g:" + softmode_g + " b:" + softmode_b + " step:" + softmode_step);
 }
 
 function split_request(request) {
@@ -295,6 +369,12 @@ function process_request(request)
         action = ACTION_WARM;
     } else if (pathname == COMMAND_DISCO) {
         action = ACTION_DISCO;
+    } else if (pathname == COMMAND_COOL) {
+        action = ACTION_COOL;
+    } else if (pathname == COMMAND_SOFT) {
+        // clear the queue
+        action_queue = [];
+        status_mode = STATUS_MODE_SOFT;
     }
     
     // Let's see if we can fulfil request now, otherwise enqueue
@@ -351,6 +431,7 @@ function onDiscover(lume) {
                                 y: state.colorY,
                                 w: state.colorW
                             }
+                            //~ console.log("c="+cmyw.c + " m="+cmyw.m + " y="+cmyw.y + " w:"+cmyw.w);
                             status_mode = STATUS_MODE_COLOR;
                             status_color = cmyw_to_rgb(cmyw);
                         } else if (state.mode == 'warmWhite') {
@@ -358,11 +439,13 @@ function onDiscover(lume) {
                             status_warm = state.warmWhitePercentage;
                         } else if (state.mode == 'disco2') {
                             status_mode = STATUS_MODE_DISCO;
+                        } else if (state.mode == 'cool') {
+                            status_mode = STATUS_MODE_COOL;
                         }
                         status_on = state.on;
                         device_synched = true;
                         device_ready = true;
-                        console.log("Initial state: r="+status_color.r + " g="+status_color.g + " b="+status_color.b);
+                        console.log("Initial state: mode=" + status_mode + " r="+status_color.r + " g="+status_color.g + " b="+status_color.b);
                     });
                 else {
                     // need to set my device configuration
