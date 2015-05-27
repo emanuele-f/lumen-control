@@ -36,11 +36,11 @@ var net = require('net');
 var Lumen = require("/home/emanuele/src/node-lumen/index.js");
 
 // :: server constraints ::
-var CONSUME_DELAY = 10;
+var CONSUME_INTERVAL = 10;              // milliseconds
 var SERVER_PORT = 7878;
 var DATA_MARKER = "$";
 var KEEP_ALIVE_LIMIT = 10;              // seconds
-var SOFTMODE_COLOR_TICK = 1;
+var INTERPOLATION_TICK = 0.1;           // 0-1 / CONSUME_INTERVAL
 
 // :: status modes ::
 var STATUS_MODE_WARM = "warm";
@@ -105,6 +105,10 @@ var softmode_step = 0;
 var softmode_r = 0;
 var softmode_g = 0;
 var softmode_b = 0;
+// color interpolation
+var interp_start = null;                // initial interpolation color
+var interp_end = null;                  // target interpolation color
+var interp_progress = 0.0;              // progress in the interpolation
 
 function get_system_seconds()
 {
@@ -184,11 +188,11 @@ function mystatus_to_bulb(callback) {
 }
 
 // called regurarly to perform actions. use action_pending to serialize
-function action_consumer()
+function heart_beat()
 {
-    if (action_queue.length==0 && status_mode==STATUS_MODE_SOFT) {
-        // soft mode custom logic
-        tick_soft_mode();
+    if (action_queue.length==0 && (status_mode==STATUS_MODE_COLOR || status_mode==STATUS_MODE_SOFT)) {
+        // interpolation logic
+        tick_interpolation();
         return;
     }
     
@@ -211,13 +215,24 @@ function action_consumer()
             action_pending = false;
         });
     } else if (action == ACTION_COLOR) {
-        lumen.rgbColor(rgb_to_99(action_val), function() {
-            status_mode = STATUS_MODE_COLOR;
-            status_color.r = action_val.r;
-            status_color.g = action_val.g;
-            status_color.b = action_val.b;
+        if (status_mode == STATUS_MODE_COLOR) {
+            // perform color interpolation
+            interp_start = {r:status_color.r, g:status_color.g, b:status_color.b};
+            interp_end = action_val;
+            interp_progress = 0.0;
             action_pending = false;
-        });
+        } else {
+            // just set given color
+            interp_start = null;
+            interp_end = null;
+            lumen.rgbColor(rgb_to_99(action_val), function() {
+                status_mode = STATUS_MODE_COLOR;
+                status_color.r = action_val.r;
+                status_color.g = action_val.g;
+                status_color.b = action_val.b;
+                action_pending = false;
+            });
+        }
     } else if (action == ACTION_WARM) {
         lumen.warmWhite(action_val, function () {
             status_mode = STATUS_MODE_WARM;
@@ -240,52 +255,67 @@ function action_consumer()
     }
 }
 
-function tick_soft_mode()
+function tick_interpolation() {
+    if (interp_end == null && status_mode == STATUS_MODE_SOFT)
+        soft_mode_next();
+    
+    if (interp_start == null || interp_end == null || action_pending || status_on == false)
+        return;
+        
+    interp_progress = Math.min(Math.max(0.0, interp_progress + INTERPOLATION_TICK), 1.0);
+    var p = interp_progress;
+    var rgb = {
+        r: interp_start.r * (1-p) + interp_end.r * p,
+        g: interp_start.g * (1-p) + interp_end.g * p,
+        b: interp_start.b * (1-p) + interp_end.b * p
+    };
+    //~ console.log("r:" + rgb.r + " g:" + rgb.g + " b:" + rgb.b + " step:" + softmode_step);
+    status_color.r = rgb.r;
+    status_color.g = rgb.g;
+    status_color.b = rgb.b;
+    
+    action_pending = true;
+    lumen.rgbColor(rgb_to_99(rgb), function() {
+        action_pending = false;
+        
+        // end of interpolation
+        if (interp_progress == 1.0)
+            interp_end = null;
+    });
+}
+
+function soft_mode_next()
 {
     // r -> y -> g -> p -> b -> m -> r
     var MIN = 0;
     var MAX = 99;
     
-    if (action_pending || status_on == false)
-        return;
-    action_pending = true;
-    
-    if (softmode_step<=1 && softmode_r != MAX) {
+    if (softmode_step == 0 || softmode_step == 7) {
         softmode_step = 1;
-        softmode_r = Math.min(MAX, softmode_r + SOFTMODE_COLOR_TICK);
-    } else if (softmode_step<=2 && softmode_g != MAX) {
+        softmode_r = MAX;
+    } else if (softmode_step==1) {
         softmode_step = 2;
-        softmode_g = Math.min(MAX, softmode_g + SOFTMODE_COLOR_TICK);
-    } else if (softmode_step<=3 && softmode_r != MIN) {
+        softmode_g = MAX;
+    } else if (softmode_step==2) {
         softmode_step = 3;
-        softmode_r = Math.max(MIN, softmode_r - SOFTMODE_COLOR_TICK);
-    } else if (softmode_step<=4 && softmode_b != MAX) {
+        softmode_r = MIN;
+    } else if (softmode_step==3) {
         softmode_step = 4;
-        softmode_b = Math.min(MAX, softmode_b + SOFTMODE_COLOR_TICK);
-    } else if (softmode_step<=5 && softmode_g != MIN) {
+        softmode_b = MAX;
+    } else if (softmode_step==4) {
         softmode_step = 5;
-        softmode_g = Math.max(MIN, softmode_g - SOFTMODE_COLOR_TICK);
-    } else if (softmode_step<=6 && softmode_r != MAX) {
+        softmode_g = MIN;
+    } else if (softmode_step==5) {
         softmode_step = 6;
-        softmode_r = Math.min(MAX, softmode_r + SOFTMODE_COLOR_TICK);
-    } else if (softmode_step<=7 && softmode_b != MIN) {
+        softmode_r = MAX;
+    } else if (softmode_step==6) {
         softmode_step = 7;
-        softmode_b = Math.max(MIN, softmode_b - SOFTMODE_COLOR_TICK);
-    } else if (softmode_step<=8 && softmode_r != MIN) {
-        softmode_step = 8;
-        softmode_r = Math.max(MIN, softmode_r - SOFTMODE_COLOR_TICK);
-    } else {
-        // again
-        softmode_step = 0;
+        softmode_b = MIN;
     }
     
-    lumen.rgbColor([softmode_r, softmode_g, softmode_b], function () {
-        status_color.r = softmode_r;
-        status_color.g = softmode_g;
-        status_color.b = softmode_b;
-        action_pending = false;
-    });
-    //~ console.log("r:" + softmode_r + " g:" + softmode_g + " b:" + softmode_b + " step:" + softmode_step);
+    interp_start = {r:status_color.r, g:status_color.g, b:status_color.b};
+    interp_end = {r:softmode_r/99., g:softmode_g/99., b:softmode_b/99.};
+    interp_progress = 0.0;
 }
 
 function split_request(request) {
@@ -371,9 +401,12 @@ function process_request(request)
     } else if (pathname == COMMAND_COOL) {
         action = ACTION_COOL;
     } else if (pathname == COMMAND_SOFT) {
-        // clear the queue
-        action_queue = [];
         status_mode = STATUS_MODE_SOFT;
+        
+        if (device_ready)
+            return RESPONSE_OK;
+        else
+            return RESPONSE_PENDING;
     }
     
     // Let's see if we can fulfil request now, otherwise enqueue
@@ -461,8 +494,8 @@ function onDiscover(bulb) {
         console.log("disconnected");
         device_ready = false;
         lumen = null;
-        // TODO reconnect in someway
-        //~ Lumen.discover(onDiscover);
+        // TODO reconnect in someway, not this
+        Lumen.discover(onDiscover);
     });
 }
 
@@ -514,5 +547,5 @@ server.on('listening', function () {
     console.log("Listening on port " + SERVER_PORT);
 });
 server.listen(SERVER_PORT);
-setInterval(action_consumer, CONSUME_DELAY);
+setInterval(heart_beat, CONSUME_INTERVAL);
 Lumen.discover(onDiscover);
