@@ -1,41 +1,41 @@
 /*
  * Emanuele Faranda     18/05/2015
- * 
+ *
  * USES UTF-8
- * 
+ *
  *  cmyk (standard):
  *      .c: 0.0-1.0 : cyan level
  *      .m: 0.0-1.0 : magenta level
  *      .y: 0.0-1.0 : yellow level
  *      .k: 0.0-1.0 : key black
- * 
+ *
  *  cmyw (for use in lumen module interface, w=1-k)
  *      .c: 0.0-1.0 : cyan level
  *      .m: 0.0-1.0 : magenta level
  *      .y: 0.0-1.0 : yellow level
  *      .w: 0.0-1.0 : key white
- * 
+ *
  *  rgb (for internal use):
  *      .r: 0.0-1.0 : red level
  *      .g: 0.0-1.0 : green level
  *      .b: 0.0-1.0 : blue level
- * 
+ *
  *  xrgb (for client use):
  *      "0xRRGGBB"
- * 
+ *
  *      RR: 00-FF : red level
  *      GG: 00-FF : green level
  *      BB: 00-FF : blue level
- * 
+ *
  * Provided conversions:
  *      xrgb <-> rgb <-> cmyw
  */
- 
+
 // :: modules ::
 var net = require('net');
 var Lumen = require("/home/emanuele/src/node-lumen/index.js");
 
-// :: server constraints ::
+// :: constraints ::
 var CONSUME_INTERVAL = 10;              // milliseconds
 var SERVER_PORT = 7878;
 var DATA_MARKER = "$";
@@ -97,6 +97,8 @@ var device_synched = false;             // if true, then status_* variables are 
 var clsock = null;                      // client socket - null if disconnected
 var lumen = null;                       // holds connected buld interface - null if disconnected
 var partial = "";                       // holds partial responses
+var beat_interval = null;               // callback to the heart_beat
+var is_discovering = false;             // true if lumen.discover is pending
 // internal request state: ensure only one applies
 var action_queue = [];                  // holds {code: ACTION_*, value: [action_specific]}
 var action_pending = false;
@@ -133,7 +135,7 @@ function rgb_to_xrgb(rgb) {
 
 function rgb_to_cmyw(rgb) {
     var k = Math.min(1-rgb.r, 1-rgb.g, 1-rgb.b);
-    
+
     return {
         c: (1-rgb.r-k) / (1-k) || 0,
         m: (1-rgb.g-k) / (1-k) || 0,
@@ -195,22 +197,22 @@ function heart_beat()
         tick_interpolation();
         return;
     }
-    
+
     if (! device_ready || action_pending || action_queue.length==0)
         // nothing to do
         return;
-    
+
     var action_q = action_queue.pop();
     var action = action_q.code;
     var action_val = action_q.value;
     action_pending = true;
-    
+
     if (action == ACTION_TURN) {
         if (action_val == "on")
             status_on = true;
         else
             status_on = false;
-            
+
         mystatus_to_bulb(function () {
             action_pending = false;
         });
@@ -258,10 +260,10 @@ function heart_beat()
 function tick_interpolation() {
     if (interp_end == null && status_mode == STATUS_MODE_SOFT)
         soft_mode_next();
-    
+
     if (interp_start == null || interp_end == null || action_pending || status_on == false)
         return;
-        
+
     interp_progress = Math.min(Math.max(0.0, interp_progress + INTERPOLATION_TICK), 1.0);
     var p = interp_progress;
     var rgb = {
@@ -273,11 +275,11 @@ function tick_interpolation() {
     status_color.r = rgb.r;
     status_color.g = rgb.g;
     status_color.b = rgb.b;
-    
+
     action_pending = true;
     lumen.rgbColor(rgb_to_99(rgb), function() {
         action_pending = false;
-        
+
         // end of interpolation
         if (interp_progress == 1.0)
             interp_end = null;
@@ -289,7 +291,7 @@ function soft_mode_next()
     // r -> y -> g -> p -> b -> m -> r
     var MIN = 0;
     var MAX = 99;
-    
+
     if (softmode_step == 0 || softmode_step == 7) {
         softmode_step = 1;
         softmode_r = MAX;
@@ -312,7 +314,7 @@ function soft_mode_next()
         softmode_step = 7;
         softmode_b = MIN;
     }
-    
+
     interp_start = {r:status_color.r, g:status_color.g, b:status_color.b};
     interp_end = {r:softmode_r/99., g:softmode_g/99., b:softmode_b/99.};
     interp_progress = 0.0;
@@ -322,7 +324,7 @@ function split_request(request) {
     var path;
     var query;
     var qx = request.indexOf("?");
-    
+
     if (qx != -1) {
         path = request.slice(0, qx);
         query = request.slice(qx+1);
@@ -330,7 +332,7 @@ function split_request(request) {
         path = request;
         query = null;
     }
-    
+
     return {
         path: path,
         query: query
@@ -345,7 +347,7 @@ function process_request(request)
     var query = parsed.query;
     var action = null;
     var action_val = null;
-    
+
     // Query commands
     if (pathname == "") {
         // just to keep alive
@@ -358,7 +360,7 @@ function process_request(request)
     } else if (pathname == REQUEST_ONOFF) {
         if (!device_ready)
             return RESPONSE_OFFLINE;
-        
+
         if (status_on)
             return REPLY_ON;
         else
@@ -366,10 +368,10 @@ function process_request(request)
     } else if (pathname == REQUEST_COLOR) {
         if (!device_ready)
             return RESPONSE_OFFLINE;
-            
+
         return rgb_to_xrgb(status_color);
     }
-    
+
     // Imperative commands
     if (pathname == COMMAND_ON) {
         action = ACTION_TURN;
@@ -380,20 +382,20 @@ function process_request(request)
     } else if (pathname == COMMAND_COLOR) {
         if (query == null)
             return RESPONSE_ERROR;
-            
+
         if (query.length != 8 || query.slice(0,2) != "0x")
             return RESPONSE_ERROR;
-    
+
         action = ACTION_COLOR;
         action_val = xrgb_to_rgb(query);
     } else if (pathname == COMMAND_WARM) {
         if (query == null)
             return RESPONSE_ERROR;
-            
+
         var b = parseInt(query) || -1;
         if (b < 0 || b > 100)
             return RESPONSE_ERROR;
-            
+
         action_val = b;
         action = ACTION_WARM;
     } else if (pathname == COMMAND_DISCO) {
@@ -402,18 +404,18 @@ function process_request(request)
         action = ACTION_COOL;
     } else if (pathname == COMMAND_SOFT) {
         status_mode = STATUS_MODE_SOFT;
-        
+
         if (device_ready)
             return RESPONSE_OK;
         else
             return RESPONSE_PENDING;
     }
-    
+
     // Let's see if we can fulfil request now, otherwise enqueue
     if (action != null) {
-        var action_q = {code: action, value:action_val};        
+        var action_q = {code: action, value:action_val};
         put_action(action_q);
-        
+
         if (device_ready)
             return RESPONSE_OK;
         else
@@ -434,7 +436,7 @@ function onRequest(request)
     if (host.indexOf("::ffff:")==0)
         host = host.slice(7, host.length);
     host = host + ":" + clsock.remotePort;
-    
+
     console.log(" <- " + host + " " + request_string(request));
     var reply = process_request(request);
     if (reply != null) {
@@ -446,11 +448,13 @@ function onRequest(request)
 function onDiscover(bulb) {
     lumen = bulb;
     console.log("Lumen found: " + lumen.toString());
-    
+
     bulb.connect(function () {});
-    
+
     bulb.on('connect', function() {
         console.log('connected!');
+        is_discovering = false;
+
         bulb.discoverServicesAndCharacteristics(function(){
             bulb.setup(function() {
                 if (! device_synched)
@@ -494,15 +498,28 @@ function onDiscover(bulb) {
         console.log("disconnected");
         device_ready = false;
         lumen = null;
-        // TODO reconnect in someway, not this
-        Lumen.discover(onDiscover);
+
+        if (clsock != null)
+            do_discover();
     });
+}
+
+function do_discover() {
+    if (is_discovering == false) {
+        Lumen.discover(onDiscover);
+        is_discovering = true;
+    }
+}
+
+function onClientDisconnection() {
+    clear_interval(beat_interval);
+    clsock = null;
 }
 
 // Start the server
 var server = net.createServer(function (socket) {
     console.log("Client Connected");
-    
+
     if (clsock != null) {
         console.log("No more clients supported");
         socket.end();
@@ -516,7 +533,7 @@ var server = net.createServer(function (socket) {
         // join previous pending data
         var pending = partial + data.toString();
         var k;
-        
+
         do {
             k = pending.indexOf(DATA_MARKER);
             if (k != -1) {
@@ -525,27 +542,28 @@ var server = net.createServer(function (socket) {
                 pending = pending.substr(k+DATA_MARKER.length);
             }
         }while (k != -1);
-        
+
         // save remaining data
         partial = pending;
     });
     clsock.on('close', function () {
         console.log("Client disconnected");
-        clsock = null;
+        onClientDisconnection();
     });
     clsock.on('error', function (err) {
         console.log("Client error: " + err);
-        clsock = null;
+        onClientDisconnection();
     });
     clsock.on('timeout', function (err) {
         console.log("Client timeout");
         clsock.destroy();
-        clsock = null;
+        onClientDisconnection();
     });
+
+    beat_interval = setInterval(heart_beat, CONSUME_INTERVAL);
+    do_discover();
 });
 server.on('listening', function () {
     console.log("Listening on port " + SERVER_PORT);
 });
 server.listen(SERVER_PORT);
-setInterval(heart_beat, CONSUME_INTERVAL);
-Lumen.discover(onDiscover);
