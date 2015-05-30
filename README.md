@@ -14,3 +14,11 @@ You'll only need:
 
 The server is implemented in nodejs. Right now, the only available client is an Android application.
 Please note that the application is configured to connect to my own server. You will need to setup your own configuration.
+
+Features
+--------
+
+- Access your Tabu Lumen from Internet, wherever you are
+- Fade from one color to another
+- Bluetooth power save mode
+- Support for the lumen modes: color, warm white, disco, cool colors (blue-magenta)

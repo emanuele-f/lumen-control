@@ -37,6 +37,7 @@ var Lumen = require("/home/emanuele/src/node-lumen/index.js");
 
 // :: constraints ::
 var CONSUME_INTERVAL = 10;              // milliseconds
+var POWER_SAVE_TIMEOUT = 300;           // seconds
 var SERVER_PORT = 7878;
 var DATA_MARKER = "$";
 var KEEP_ALIVE_LIMIT = 10;              // seconds
@@ -98,6 +99,7 @@ var clsock = null;                      // client socket - null if disconnected
 var lumen = null;                       // holds connected buld interface - null if disconnected
 var partial = "";                       // holds partial responses
 var beat_interval = null;               // callback to the heart_beat
+var ps_timeout = null;                  // powersave callback for bluetooth
 var is_discovering = false;             // true if lumen.discover is pending
 // internal request state: ensure only one applies
 var action_queue = [];                  // holds {code: ACTION_*, value: [action_specific]}
@@ -445,21 +447,39 @@ function onRequest(request)
     }
 }
 
+function onLumenDisconnected() {
+    console.log("Lumen disconnected");
+    device_ready = false;
+
+    if (lumen != null) {
+        lumen.removeListener('disconnect', onLumenDisconnected);
+        lumen = null;
+    }
+
+    if (clsock != null)
+        do_discover();
+};
+
+function onClientDisconnected() {
+    clearInterval(beat_interval);
+    beat_interval = null;
+    clsock = null;
+    ps_timeout = setTimeout(enterPowerSave, POWER_SAVE_TIMEOUT*1000);
+}
+
 function onDiscover(bulb) {
     lumen = bulb;
     console.log("Lumen found: " + lumen.toString());
 
-    bulb.connect(function () {});
-
-    bulb.on('connect', function() {
-        console.log('connected!');
+    lumen.connect(function() {
+        console.log('Lumen connected');
         is_discovering = false;
 
-        bulb.discoverServicesAndCharacteristics(function(){
-            bulb.setup(function() {
+        lumen.discoverServicesAndCharacteristics(function(){
+            lumen.setup(function() {
                 if (! device_synched)
                     // need to get device current configuration
-                    bulb.readState(function(state) {
+                    lumen.readState(function(state) {
                         // fill status_mode variable and related
                         if (state.mode == 'color') {
                             // TODO use decrypted rgb
@@ -494,26 +514,34 @@ function onDiscover(bulb) {
             });
         });
     });
-    bulb.on('disconnect', function() {
-        console.log("disconnected");
-        device_ready = false;
-        lumen = null;
 
-        if (clsock != null)
-            do_discover();
-    });
+    lumen.on('disconnect', onLumenDisconnected);
 }
 
 function do_discover() {
+    // remove power save scheduling
+    if (ps_timeout != null) {
+        clearTimeout(ps_timeout);
+        ps_timeout = null;
+    }
     if (is_discovering == false) {
+        console.log("Discovering...");
         Lumen.discover(onDiscover);
         is_discovering = true;
     }
 }
 
-function onClientDisconnection() {
-    clear_interval(beat_interval);
-    clsock = null;
+function enterPowerSave() {
+    ps_timeout = null;
+
+    if (lumen != null) {
+        lumen.disconnect(function(){
+            if (clsock == null) {
+                lumen = null;
+                console.log("Power save");
+            }
+        });
+    }
 }
 
 // Start the server
@@ -548,20 +576,20 @@ var server = net.createServer(function (socket) {
     });
     clsock.on('close', function () {
         console.log("Client disconnected");
-        onClientDisconnection();
+        onClientDisconnected();
     });
     clsock.on('error', function (err) {
         console.log("Client error: " + err);
-        onClientDisconnection();
     });
     clsock.on('timeout', function (err) {
         console.log("Client timeout");
         clsock.destroy();
-        onClientDisconnection();
+        onClientDisconnected();
     });
 
     beat_interval = setInterval(heart_beat, CONSUME_INTERVAL);
-    do_discover();
+    if (lumen == null)
+        do_discover();
 });
 server.on('listening', function () {
     console.log("Listening on port " + SERVER_PORT);
