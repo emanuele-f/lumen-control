@@ -48,7 +48,8 @@ public class LightExecutor implements Runnable {
 	LightCommandQueue queue;
 	onLightStateReceiver receiver;
 	Activity activity;
-	SocketAddress addr;
+	String host;
+	int port;
 	ByteBuffer rbuf = ByteBuffer.allocate(256);
 	CharsetEncoder encoder;
 	CharsetDecoder decoder;
@@ -62,7 +63,8 @@ public class LightExecutor implements Runnable {
 		Charset charset = Charset.forName("UTF-8");
 		this.encoder = charset.newEncoder();
 		this.decoder = charset.newDecoder();		
-		this.addr = new InetSocketAddress(host, port);
+		this.host = host;
+		this.port = port;
 		this.sock = null;
 	}
 	
@@ -75,6 +77,8 @@ public class LightExecutor implements Runnable {
 	// tries to connect. Calls onConnect. Returns status.
 	protected boolean connect() {
 		boolean ok = false;
+		
+		SocketAddress addr = new InetSocketAddress(host, port);
 		
 		try {
 			this.sock = SocketChannel.open();
