@@ -22,3 +22,7 @@ Features
 - Fade from one color to another
 - Bluetooth power save mode
 - Support for the lumen modes: color, warm white, disco, cool colors (blue-magenta)
+
+Requirements
+------------
+A modified version of [node-lumen](https://github.com/emanuele-f/node-lumen) is required to properly communicate with the lamp. You can clone it from https://github.com/emanuele-f/node-lumen. Once cloned, its path must be hard coded into the [server.js](server.js) module: replace "/home/emanuele/src/node-lumen/index.js" with "[path_to_node_lumen]/index.js" string
