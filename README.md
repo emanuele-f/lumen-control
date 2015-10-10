@@ -19,10 +19,15 @@ Features
 --------
 
 - Access your Tabu Lumen from Internet, wherever you are
-- Fade from one color to another
-- Bluetooth power save mode
-- Support for the lumen modes: color, warm white, disco, cool colors (blue-magenta)
+- Fade from one color to another, see "soft" mode (sperimental)
+- Support for the lumen modes: color, white, disco, cool colors (blue-magenta)
 
-Requirements
+Server setup
 ------------
-A modified version of [node-lumen](https://github.com/emanuele-f/node-lumen) is required to properly communicate with the lamp. You can clone it from https://github.com/emanuele-f/node-lumen. Once cloned, its path must be hard coded into the [server.js](server.js) module: replace "/home/emanuele/src/node-lumen/index.js" with "[path_to_node_lumen]/index.js" string
+- install nodejs
+- install libbluetooth-dev (required by [noble](https://github.com/sandeepmistry/noble) dependency; also ensure to have linux version 3.6 or above)
+
+enter lumen-control directory and
+
+- install [node-lumen](https://github.com/sandeepmistry/node-lumen): npm install lumen
+- run: node server.js

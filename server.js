@@ -3,18 +3,6 @@
  *
  * USES UTF-8
  *
- *  cmyk (standard):
- *      .c: 0.0-1.0 : cyan level
- *      .m: 0.0-1.0 : magenta level
- *      .y: 0.0-1.0 : yellow level
- *      .k: 0.0-1.0 : key black
- *
- *  cmyw (for use in lumen module interface, w=1-k)
- *      .c: 0.0-1.0 : cyan level
- *      .m: 0.0-1.0 : magenta level
- *      .y: 0.0-1.0 : yellow level
- *      .w: 0.0-1.0 : key white
- *
  *  rgb (for internal use):
  *      .r: 0.0-1.0 : red level
  *      .g: 0.0-1.0 : green level
@@ -28,12 +16,12 @@
  *      BB: 00-FF : blue level
  *
  * Provided conversions:
- *      xrgb <-> rgb <-> cmyw
+ *      xrgb <-> rgb
  */
 
 // :: modules ::
 var net = require('net');
-var Lumen = require("/home/emanuele/src/node-lumen/index.js");
+var Lumen = require('lumen');
 
 // :: constraints ::
 var CONSUME_INTERVAL = 10;              // milliseconds
@@ -44,7 +32,7 @@ var KEEP_ALIVE_LIMIT = 10;              // seconds
 var INTERPOLATION_TICK = 0.1;           // 0-1 / CONSUME_INTERVAL
 
 // :: status modes ::
-var STATUS_MODE_WARM = "warm";
+var STATUS_MODE_WHITE = "white";
 var STATUS_MODE_COLOR = "color";
 var STATUS_MODE_DISCO = "disco";
 var STATUS_MODE_SOFT = "soft";
@@ -65,7 +53,7 @@ var REQUEST_STATUS = "/status";
 var COMMAND_ON = "/on";
 var COMMAND_OFF = "/off";
 var COMMAND_COLOR = "/rgb";
-var COMMAND_WARM = "/warm";
+var COMMAND_WHITE = "/warm";
 var COMMAND_DISCO = "/disco";
 var COMMAND_SOFT = "/soft";
 var COMMAND_COOL = "/cool";
@@ -80,14 +68,14 @@ var RESPONSE_ALIVE = "+";
 // :: consumer queue action codes ::
 var ACTION_TURN = 1;
 var ACTION_COLOR = 2;
-var ACTION_WARM = 3;
+var ACTION_WHITE = 3;
 var ACTION_DISCO = 4;
 var ACTION_COOL = 5;
 
 // :: bulb internal state clone ::
-var status_mode = STATUS_MODE_WARM;
+var status_mode = STATUS_MODE_WHITE;
 var status_on = true;
-var status_color = null;
+var status_color = {r:1.0, g:1.0, b:1.0};
 var status_warm = null;
 
 // :: bulb connection status ::
@@ -114,6 +102,15 @@ var interp_start = null;                // initial interpolation color
 var interp_end = null;                  // target interpolation color
 var interp_progress = 0.0;              // progress in the interpolation
 
+// Handle rgb list and property formats, in range 0.0-1.0
+Lumen.prototype.rgbColor = function (rgb, callback)
+{
+    if (rgb.hasOwnProperty("r"))
+        this.color(rgb.r*99, rgb.g*99, rgb.b*99, callback);
+    else
+        this.color(rgb[0]*99, rgb[1]*99, rgb[2]*99, callback);
+}
+
 function get_system_seconds()
 {
     return Math.floor(new Date() / 1000);
@@ -135,32 +132,6 @@ function rgb_to_xrgb(rgb) {
             ("00" + parseInt(rgb.b * 255).toString(16)).substr(-2)
 }
 
-function rgb_to_cmyw(rgb) {
-    var k = Math.min(1-rgb.r, 1-rgb.g, 1-rgb.b);
-
-    return {
-        c: (1-rgb.r-k) / (1-k) || 0,
-        m: (1-rgb.g-k) / (1-k) || 0,
-        y: (1-rgb.b-k) / (1-k) || 0,
-        w: 1-k
-    };
-}
-
-function cmyw_to_rgb(cmyw)
-{
-    var k = 1-cmyw.w;
-    return {
-        r: 1 - Math.min(1, cmyw.c * (1 - k) + k),
-        g: 1 - Math.min(1, cmyw.m * (1 - k) + k),
-        b: 1 - Math.min(1, cmyw.y * (1 - k) + k)
-    };
-}
-
-function rgb_to_99(color)
-{
-    return [color.r*99, color.g*99, color.b*99]
-}
-
 // put an action in the queue, if not already there
 function put_action(action)
 {
@@ -172,16 +143,15 @@ function put_action(action)
 function mystatus_to_bulb(callback) {
     if (status_on) {
         if (status_mode == STATUS_MODE_COLOR) {
-            lumen.rgbColor(rgb_to_99(status_color), callback);
-        } else if (status_mode == STATUS_MODE_WARM)
-            lumen.warmWhite(status_warm, callback);
+            lumen.rgbColor(status_color, callback);
+        } else if (status_mode == STATUS_MODE_WHITE)
+            lumen.white(status_warm, callback);
         else if (status_mode == STATUS_MODE_DISCO)
             lumen.disco2Mode(callback);
         else if (status_mode == STATUS_MODE_COOL)
             lumen.coolMode(callback);
         else if (status_mode == STATUS_MODE_SOFT) {
-            cmyw = rgb_to_cmyw({r:softmode_r, g:softmode_g, b:softmode_b});
-            lumen.color(cmyw.c, cmyw.m, cmyw.y, cmyw.w, callback);
+            lumen.rgbColor([softmode_r, softmode_g, softmode_b], callback);
         } else {
             console.log("Unknown mode:", status_mode);
             lumen.turnOn(callback);
@@ -229,7 +199,7 @@ function heart_beat()
             // just set given color
             interp_start = null;
             interp_end = null;
-            lumen.rgbColor(rgb_to_99(action_val), function() {
+            lumen.rgbColor(action_val, function() {
                 status_mode = STATUS_MODE_COLOR;
                 status_color.r = action_val.r;
                 status_color.g = action_val.g;
@@ -237,9 +207,9 @@ function heart_beat()
                 action_pending = false;
             });
         }
-    } else if (action == ACTION_WARM) {
-        lumen.warmWhite(action_val, function () {
-            status_mode = STATUS_MODE_WARM;
+    } else if (action == ACTION_WHITE) {
+        lumen.white(action_val, function () {
+            status_mode = STATUS_MODE_WHITE;
             status_warm = action_val;
             action_pending = false;
         });
@@ -279,7 +249,7 @@ function tick_interpolation() {
     status_color.b = rgb.b;
 
     action_pending = true;
-    lumen.rgbColor(rgb_to_99(rgb), function() {
+    lumen.rgbColor(rgb, function() {
         action_pending = false;
 
         // end of interpolation
@@ -291,8 +261,8 @@ function tick_interpolation() {
 function soft_mode_next()
 {
     // r -> y -> g -> p -> b -> m -> r
-    var MIN = 0;
-    var MAX = 99;
+    var MIN = 0.0;
+    var MAX = 1.0;
 
     if (softmode_step == 0 || softmode_step == 7) {
         softmode_step = 1;
@@ -318,7 +288,7 @@ function soft_mode_next()
     }
 
     interp_start = {r:status_color.r, g:status_color.g, b:status_color.b};
-    interp_end = {r:softmode_r/99., g:softmode_g/99., b:softmode_b/99.};
+    interp_end = {r:softmode_r, g:softmode_g, b:softmode_b};
     interp_progress = 0.0;
 }
 
@@ -390,7 +360,7 @@ function process_request(request)
 
         action = ACTION_COLOR;
         action_val = xrgb_to_rgb(query);
-    } else if (pathname == COMMAND_WARM) {
+    } else if (pathname == COMMAND_WHITE) {
         if (query == null)
             return RESPONSE_ERROR;
 
@@ -399,7 +369,7 @@ function process_request(request)
             return RESPONSE_ERROR;
 
         action_val = b;
-        action = ACTION_WARM;
+        action = ACTION_WHITE;
     } else if (pathname == COMMAND_DISCO) {
         action = ACTION_DISCO;
     } else if (pathname == COMMAND_COOL) {
@@ -471,48 +441,43 @@ function onDiscover(bulb) {
     lumen = bulb;
     console.log("Lumen found: " + lumen.toString());
 
-    lumen.connect(function() {
+    lumen.connectAndSetUp(function() {
         console.log('Lumen connected');
         is_discovering = false;
 
-        lumen.discoverServicesAndCharacteristics(function(){
-            lumen.setup(function() {
-                if (! device_synched)
-                    // need to get device current configuration
-                    lumen.readState(function(state) {
-                        // fill status_mode variable and related
-                        if (state.mode == 'color') {
-                            // TODO use decrypted rgb
-                            cmyw = {
-                                c: state.colorC,
-                                m: state.colorM,
-                                y: state.colorY,
-                                w: state.colorW
-                            }
-                            //~ console.log("c="+cmyw.c + " m="+cmyw.m + " y="+cmyw.y + " w:"+cmyw.w);
-                            status_mode = STATUS_MODE_COLOR;
-                            status_color = cmyw_to_rgb(cmyw);
-                        } else if (state.mode == 'warmWhite') {
-                            status_mode = STATUS_MODE_WARM;
-                            status_warm = state.warmWhitePercentage;
-                        } else if (state.mode == 'disco2') {
-                            status_mode = STATUS_MODE_DISCO;
-                        } else if (state.mode == 'cool') {
-                            status_mode = STATUS_MODE_COOL;
-                        }
-                        status_on = state.on;
-                        device_synched = true;
-                        device_ready = true;
-                        console.log("Initial state: mode=" + status_mode + " r="+status_color.r + " g="+status_color.g + " b="+status_color.b);
-                    });
-                else {
-                    // need to set my device configuration
+        if (! device_synched) {
+            // need to get device current configuration
+            lumen.readState(function(state) {
+                if (state === null) {
                     mystatus_to_bulb(function() {
                         device_ready = true;
                     });
+                    return;
                 }
+
+                // fill status_mode variable and related
+                if (state.mode == 'color') {
+                    status_mode = STATUS_MODE_COLOR;
+                    status_color = {r:state.r, g:state.g, b:state.b};
+                } else if (state.mode == 'white') {
+                    status_mode = STATUS_MODE_WHITE;
+                    status_warm = state.percentage;
+                } else if (state.mode == 'disco2') {
+                    status_mode = STATUS_MODE_DISCO;
+                } else if (state.mode == 'cool') {
+                    status_mode = STATUS_MODE_COOL;
+                }
+                status_on = state.on;
+                device_synched = true;
+                device_ready = true;
+                console.log("Initial state: mode=" + status_mode + " r="+status_color.r + " g="+status_color.g + " b="+status_color.b);
             });
-        });
+        } else {
+            // need to set my device configuration
+            mystatus_to_bulb(function() {
+                device_ready = true;
+            });
+        }
     });
 
     lumen.on('disconnect', onLumenDisconnected);
