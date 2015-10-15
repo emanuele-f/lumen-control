@@ -441,9 +441,16 @@ function onDiscover(bulb) {
     lumen = bulb;
     console.log("Lumen found: " + lumen.toString());
 
-    lumen.connectAndSetUp(function() {
-        console.log('Lumen connected');
+    lumen.connectAndSetUp(function(error) {
         is_discovering = false;
+        
+        if (error) {
+            console.log('Lumen connection error');
+            lumen.disconnect(function() {});
+            return;
+        }
+        
+        console.log('Lumen connected');
 
         if (! device_synched) {
             // need to get device current configuration
@@ -489,6 +496,7 @@ function do_discover() {
         clearTimeout(ps_timeout);
         ps_timeout = null;
     }
+
     if (is_discovering == false) {
         console.log("Discovering...");
         Lumen.discover(onDiscover);
