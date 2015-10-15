@@ -8,7 +8,6 @@
     android:paddingRight="@dimen/activity_horizontal_margin"
     android:paddingTop="@dimen/activity_vertical_margin"
     tools:context="com.emanuelef.lightfun.MainActivity$PlaceholderFragment" >
-    
     <LinearLayout android:orientation="horizontal"
         android:id="@+id/linabove"
         android:layout_width="match_parent"
@@ -28,13 +27,21 @@
         	android:checked="false"
     		android:layout_width="wrap_content"
     		android:layout_height="wrap_content"/>
-        <Spinner
-    		android:id="@+id/modesel"
-    		android:entries="@array/modes"
-    		android:layout_width="wrap_content"
-    		android:layout_height="wrap_content">
+    </LinearLayout>
+    
+    <LinearLayout android:orientation="horizontal"
+        android:id="@+id/linmid"
+        android:layout_below="@id/linabove"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        >
+	    <Spinner
+	   		android:id="@+id/modesel"
+	   		android:entries="@array/modes"
+	   		android:layout_width="wrap_content"
+	   		android:layout_height="wrap_content">
 	    </Spinner>
-        <ToggleButton
+	    <ToggleButton
 	        android:id="@+id/onoff"
 	        android:textOn="On "
 	        android:textOff="Off"
@@ -45,7 +52,7 @@
 
     <LinearLayout android:orientation="vertical"
         android:gravity="center_horizontal"
-        android:layout_below="@id/linabove"
+        android:layout_below="@id/linmid"
         android:layout_width="match_parent"
         android:layout_height="wrap_content">
 	    <com.larswerkman.holocolorpicker.ColorPicker
