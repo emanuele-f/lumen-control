@@ -30,8 +30,8 @@ public class MainActivity extends AppCompatActivity implements OnColorChangedLis
 	LightController bulb;
 	String host;
 	
-	public static final String SERVER_BLACKSILVER = "192.168.1.2";
-	public static final String SERVER_RASPBERRY = "cdotslash.ns0.it";
+	public static final String SERVER_LOCAL = "x.x.x.x";
+	public static final String SERVER_REMOTE = "x.x.x.x";
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
@@ -46,7 +46,7 @@ public class MainActivity extends AppCompatActivity implements OnColorChangedLis
 			fragment = (PlaceholderFragment) getSupportFragmentManager().getFragments().get(0);
 		}
 		
-		this.host = SERVER_RASPBERRY;
+		this.host = SERVER_REMOTE;
 		this.bulb = new LightController(this, this, host);
 	}
 	
@@ -136,10 +136,10 @@ public class MainActivity extends AppCompatActivity implements OnColorChangedLis
 		String nhost = null;
 		Resources res = getResources();
 		
-		if (item.equals(res.getString(R.string.blacksilver)))
-			nhost = SERVER_BLACKSILVER;
-		else if (item.equals(res.getString(R.string.raspberry)))
-			nhost = SERVER_RASPBERRY;
+		if (item.equals(res.getString(R.string.localserver)))
+			nhost = SERVER_LOCAL;
+		else if (item.equals(res.getString(R.string.remoteserver)))
+			nhost = SERVER_REMOTE;
 		
 		if (nhost != host) {
 			host = nhost;
