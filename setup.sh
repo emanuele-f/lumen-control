@@ -5,8 +5,8 @@
 
 SECRET_FILE=".secret"
 TARGET_FILE="./LightFun/src/com/emanuelef/lightfun/MainActivity.java"
-SERVER_LOCAL_STR="SERVER_BLACKSILVER"
-SERVER_REMOTE_STR="SERVER_RASPBERRY"
+SERVER_LOCAL_STR="SERVER_LOCAL"
+SERVER_REMOTE_STR="SERVER_REMOTE"
 
 function usage() {
     echo "usage: $0 [--pre-commit | --post-commit | --local [ip] | --remote [ip]]" >&2

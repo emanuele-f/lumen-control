@@ -30,8 +30,9 @@ public class MainActivity extends AppCompatActivity implements OnColorChangedLis
 	LightController bulb;
 	String host;
 	
-	public static final String SERVER_LOCAL = "x.x.x.x";
-	public static final String SERVER_REMOTE = "x.x.x.x";
+	// Do not edit manually, use setup.sh with --local and --remote
+	public static final String SERVER_LOCAL = "192.168.1.77";
+	public static final String SERVER_REMOTE = "2.231.26.11";
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
