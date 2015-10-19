@@ -27,7 +27,7 @@ Server setup
 - install nodejs
 - install libbluetooth-dev (required by [noble](https://github.com/sandeepmistry/noble) dependency; also ensure to have linux version 3.6 or above)
 
-enter lumen-control directory and
+Enter lumen-control directory and
 
 - install [node-lumen](https://github.com/sandeepmistry/node-lumen): npm install lumen
-- run: node server.js
+- run: cd server && node index.js
