@@ -230,6 +230,8 @@ Server.prototype._onClientDisconnected = function() {
         console.log("Client disconnected");
         this._client.destroy();
         this._client = null;
+
+        this._controller.disconnect();
     }
 };
 

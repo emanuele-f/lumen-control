@@ -33,7 +33,10 @@ var Controller = function () {
     this.ready = false;
 
     this._lumen = null;
+    this._listener_set = false;
     this._discovering = false;
+    this._connecting = false;
+    this._stopped = false;                             // use to force disconnection
     this._pending = null;                                   // .action, .value
     this._busy = true;                                      // !_busy => _pending = null
     this._softstep = 0;
@@ -52,13 +55,25 @@ Controller.prototype._getSeconds = function(callback) {
 
 /* connects or reconnects to the bound lumen */
 Controller.prototype._connect = function() {
+    if (this._connecting)
+        return;
+
+    this._connecting = true;
     this._lumen.connectAndSetUp(function(error) {
+        if (this._stopped)
+            return;
+
         if (error) {
             console.log('Lumen connection error');
+            this._connecting = false;
+            // TODO use a timer before retry and fix recursion bug!
             this._connect();
         } else {
             console.log('Lumen connected');
             this._syncStatus(function() {
+                if (this._stopped)
+                    return;
+                this._connecting = false;
                 this.ready = true;
                 this._executePendingCommand();
             }.bind(this));
@@ -83,23 +98,39 @@ Controller.prototype._syncStatus = function(callback) {
 };
 
 Controller.prototype._onDisconnect = function() {
-    console.log("Lumen disconnected, retry...");
     this.ready = false;
-    this._connect();
+
+    if (! this._stopped) {
+        console.log("Lumen disconnected, retry...");
+        this._connecting = false;
+        this._connect();
+    } else {
+        console.log("Lumen disconnected");
+    }
 };
 
-Controller.prototype._startDiscover = function() {
+Controller.prototype._doDiscover = function() {
+    if (this._discovering)
+        return;
+
     console.log("Start discovering...");
     this._discovering = true;
 
+    if (!this._listener_set)
+        // need to keep a reference to remove on stopDiscoverAll
+        this._listener_set = function(lumen) {
+            if (this._stopped)
+                return;
+
+            console.log("Lumen bound: " + lumen.toString());
+            this._discovering = false;
+            this._lumen = lumen;
+            this._lumen.on('disconnect', this._onDisconnect.bind(this));
+            this._connect();
+        }.bind(this);
+
     // discovering process is handled by noble, only one device at a time
-    Lumen.discover(function(lumen) {
-        console.log("Lumen bound: " + lumen.toString());
-        this._discovering = false;
-        this._lumen = lumen;
-        this._lumen.on('disconnect', this._onDisconnect.bind(this));
-        this._connect();
-    }.bind(this));
+    Lumen.discoverAll(this._listener_set);
 };
 
 Controller.prototype._executePendingCommand = function() {
@@ -260,11 +291,41 @@ Controller.prototype.command = function(action, value) {
     }
 };
 
+/* start/restart device connection */
 Controller.prototype.connect = function() {
-    if (! this._lumen && ! this._discovering)
-        this._startDiscover();
+    if (this.ready)
+        return;
+
+    if (!this._stopped && (this._discovering || this._connecting)) {
+        // already in progress
+        return;
+    }
+
+    this._stopped = false;
+    if (this._lumen) {
+        // we are already bound
+        this._connecting = false;
+        this._connect();
+    } else {
+        // still not bound
+        this._discovering = false;
+        this._doDiscover();
+    }
 };
 
+/* stop any action we are taking to connect */
+Controller.prototype.disconnect = function() {
+    if (this._stopped || this.mode === Modes.SOFT)
+        return;
+
+    this._stopped = true;
+    this._ready = false;
+
+    if (this._discovering)
+        Lumen.stopDiscoverAll(this._listener_set);
+    else if (this._lumen && ! this._connecting)
+        this._lumen.disconnect();
+};
 
 module.exports = {
     'Controller': Controller,
