@@ -4,3 +4,4 @@ gen/
 .secret
 .classpath
 project.properties
+node_modules
