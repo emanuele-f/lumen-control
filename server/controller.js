@@ -202,8 +202,12 @@ Controller.prototype._onConnected = function(error) {
             var cmd = this._pending;
             this._pending = null;
             this._executeCommand(cmd, this._evaluateUserDecision.bind(this));
+            // TODO add Warm command
+        } else if (this.mode === Modes.DISCO || this.mode === Modes.COOL || this.mode == Modes.SOFT) {
+            // these are special modes, setting them again will not be pleasant
+            this._evaluateUserDecision.bind(this);
         } else {
-            // when there is not, just set my state
+            // set my state to the lumen
             this._syncStatus(this._evaluateUserDecision.bind(this));
         }
     }
