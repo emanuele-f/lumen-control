@@ -5,6 +5,7 @@ var COLOR_STEP = 0.01;                  // step for color mode
 var SOFTMODE_MIN = 0.25;                // softmode minimum colors value
 var SOFTMODE_MAX = 1.0;                 // softmode maximum colors value
 var SOFTMODE_STEP = 0.002;              // step for soft mode
+var CONNECTION_TIMEOUT = 10000;         // retriggers _evaluateUserDecision when lumen connection fails without error
 
 var Modes = {
     COLOR: 'color',
@@ -45,6 +46,7 @@ var Controller = function () {
     this._disconnecting = false;        // true if we are actively disconnecting
     this._initialsync = false;          // true if we are actively sending initial synchronization
     this.ready = false;                 // true if we are bound and connected
+    this._watchdog = null;
 
     // internal status
     this._pending = null;               // .action, .value
@@ -69,6 +71,22 @@ Controller.prototype._makeUserDecision = function() {
         Lumen.stopDiscoverAll(this._discovery_listener);
         this._discovering = false;
         this._stopped = true;
+    }
+};
+
+Controller.prototype._onWatchdog = function() {
+    this._watchdog = null;
+
+    if (this._wants_connected && this._connecting && !this._lumen.connectedAndSetUp) {
+        // we should cancel the connection here...but how?
+        if (this._lumen._peripheral.state === 'disconnected') {
+            console.log("Connection attempt hang");
+            this._connecting = false;
+            this._evaluateUserDecision();
+        } else {
+            // it is still trying to connect, will check later
+            this._watchdog = setTimeout(this._onWatchdog.bind(this), CONNECTION_TIMEOUT);
+        }
     }
 };
 
@@ -152,6 +170,14 @@ Controller.prototype._handleDisconnect = function() {
 Controller.prototype._doConnect = function() {
     console.log("Connecting...");
     this._connecting = true;
+
+    /* Currently it is not possible to know if a connectAndSetUp will wait
+     * forever. See https://github.com/sandeepmistry/noble/issues/229
+     * This uses a timer to prevent hanging
+     */
+    if (this._watchdog)
+        clearTimeout(this._watchdog);
+    this._watchdog = setTimeout(this._onWatchdog.bind(this), CONNECTION_TIMEOUT);
 
     this._lumen.connectAndSetUp(this._evaluateUserDecision.bind(this));
 };
