@@ -171,19 +171,26 @@ Controller.prototype._onConnected = function(error) {
         this._evaluateUserDecision();
     } else {
         this._initialsync = true;
-        this._syncStatus(this._evaluateUserDecision.bind(this));
+        if (this._pending) {
+            // when there is a pending command, execute it
+            var cmd = this._pending;
+            this._pending = null;
+            this._executeCommand(cmd, this._evaluateUserDecision.bind(this));
+        } else {
+            // when there is not, just set my state
+            this._syncStatus(this._evaluateUserDecision.bind(this));
+        }
     }
 };
 
 /* PRE: _lumen <> null & _initialsync = true
- * POST: _initialsync = false & ready = true
+ * POST: _initialsync = false & ready = true & _busy = false
  */
 Controller.prototype._onInitialStatusSynched = function() {
     console.log('Lumen connected');
     this._initialsync = false;
+    this._busy = false;
     this.ready = true;
-
-    this._executePendingCommand();
 
     // end
     this._evaluateUserDecision();
@@ -207,14 +214,6 @@ Controller.prototype._onDisconnected = function() {
 
     // end
     this._evaluateUserDecision();
-
-    //~ if (this._wants_connected) {
-        //~ console.log("Lumen disconnected, retry...");
-        //~ this._connecting = false;
-        //~ this._doConnect();
-    //~ } else {
-
-    //~ }
 };
 
 // sync internal status to the lumen
@@ -234,10 +233,13 @@ Controller.prototype._syncStatus = function(callback) {
 };
 
 Controller.prototype._executePendingCommand = function() {
+    if (! this.ready)
+        return;
+
     if (this._pending) {
         var cmd = this._pending;
         this._pending = null;
-        this._executeCommand(cmd);
+        this._executeCommand(cmd, this._executePendingCommand.bind(this));
     } else {
         this._busy = false;
     }
@@ -318,61 +320,59 @@ Controller.prototype._softmodeNextStep = function () {
     this._startInterpolationWork(target, SOFTMODE_STEP);
 };
 
-Controller.prototype._executeCommand = function(cmd) {
+Controller.prototype._executeCommand = function(cmd, callback) {
     var action = cmd.action;
     var value = cmd.value;
 
-    if (! this.ready)
-        return;
     this._busy = true;
 
     if (action === Commands.TURN_ON) {
         if (! this.lighton) {
             this._stopAnyWork();
             this.lighton = true;
-            this._syncStatus(this._executePendingCommand.bind(this));
+            this._syncStatus(callback);
         } else {
-            this._executePendingCommand();
+            callback();
         }
     } else if (action === Commands.TURN_OFF) {
         if (this.lighton) {
             this._stopAnyWork();
             this.lighton = false;
-            this._syncStatus(this._executePendingCommand.bind(this));
+            this._syncStatus(callback);
         } else {
-            this._executePendingCommand();
+            callback();
         }
     } else if (action === Commands.DISCO) {
         this._stopAnyWork();
         this.mode = Modes.DISCO;
-        this._syncStatus(this._executePendingCommand.bind(this));
+        this._syncStatus(callback);
     } else if (action === Commands.COOL) {
         this._stopAnyWork();
         this.mode = Modes.COOL;
-        this._syncStatus(this._executePendingCommand.bind(this));
+        this._syncStatus(callback);
     } else if (action === Commands.WHITE) {
         // TODO white interpolation + color mix
         this._stopAnyWork();
         this.mode = Modes.WHITE;
         this.white = value;
-        this._syncStatus(this._executePendingCommand.bind(this));
+        this._syncStatus(callback);
     } else if (action === Commands.COLOR) {
         if (this.mode === Modes.COLOR || this.mode === Modes.SOFT) {
             this.mode = Modes.COLOR;
             this._startInterpolationWork(value, COLOR_STEP);
-            this._executePendingCommand();
+            callback();
         } else {
             // current color is not relevant, set color directly
             this.mode = Modes.COLOR;
             this.color = value;
-            this._syncStatus(this._executePendingCommand.bind(this));
+            this._syncStatus(callback);
         }
     } else if (action === Commands.SOFT) {
         this._startSoftmodeWork();
-        this._executePendingCommand();
+        callback();
     } else {
         console.log("ERROR: unrecognized command: ", action);
-        this._executePendingCommand();
+        callback();
     }
 };
 
@@ -387,7 +387,7 @@ Controller.prototype.command = function(action, value) {
         this._pending = cmd;
         return true;
     } else {
-        this._executeCommand(cmd);
+        this._executeCommand(cmd, this._executePendingCommand.bind(this));
         return false;
     }
 };
