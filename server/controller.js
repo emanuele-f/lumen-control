@@ -26,59 +26,195 @@ var Commands = {
 };
 
 var Controller = function () {
+    // information variables
     this.mode = Modes.WHITE;
     this.color = [1.0, 1.0, 1.0];
     this.white = 1.0;
     this.lighton = true;
-    this.ready = false;
 
-    this._lumen = null;
-    this._listener_set = false;
-    this._discovering = false;
-    this._connecting = false;
-    this._stopped = false;                             // use to force disconnection
-    this._pending = null;                                   // .action, .value
-    this._busy = true;                                      // !_busy => _pending = null
+    // last user decision variables
+    this._wants_connected = false;
+    this._wants_disconnected = false;
+    this._stopped = true;               // true if there are no pending actions by previous decision
+
+    // flow control stuff
+    this._lumen = null;                 // true if we are bound to a lumen (after successfull discovery)
+    this._discovery_listener = null;    // <> null indicates that a discovery listener is set
+    this._discovering = false;          // true if we are actively discovering
+    this._connecting = false;           // true if we are actively connecting
+    this._disconnecting = false;        // true if we are actively disconnecting
+    this._initialsync = false;          // true if we are actively sending initial synchronization
+    this.ready = false;                 // true if we are bound and connected
+
+    // internal status
+    this._pending = null;               // .action, .value
+    this._busy = true;                  // !_busy => _pending = null
     this._softstep = 0;
 
     // interpolation stuff
-    this._initial = [1.0, 1.0, 1.0];                        // initial interpolation value
-    this._target = [1.0, 1.0, 1.0];                         // final interpolation value
+    this._initial = [1.0, 1.0, 1.0];    // initial interpolation value
+    this._target = [1.0, 1.0, 1.0];     // final interpolation value
     this._interpwait = false;
     this._progress = 0.0;
     this._timer = null;
 };
 
-Controller.prototype._getSeconds = function(callback) {
-    return Math.floor(new Date() / 1000);
+/* updates internal state to begin evaluating user decisions */
+Controller.prototype._makeUserDecision = function() {
+    if (this._stopped) {
+        this._stopped = false;
+        this._evaluateUserDecision();
+    } else if (this._wants_disconnected && this._discovering) {
+        // we must stop it here
+        Lumen.stopDiscoverAll(this._discovery_listener);
+        this._discovering = false;
+        this._stopped = true;
+    }
 };
 
-/* connects or reconnects to the bound lumen */
-Controller.prototype._connect = function() {
-    if (this._connecting)
-        return;
+/* this function is critical: decides what to do after each asynchronous command */
+Controller.prototype._evaluateUserDecision = function(arg) {
+    if (this._wants_connected) {
+        this._disconnecting = false;
 
-    this._connecting = true;
-    this._lumen.connectAndSetUp(function(error) {
-        if (this._stopped)
-            return;
-
-        if (error) {
-            console.log('Lumen connection error');
-            this._connecting = false;
-            // TODO use a timer before retry and fix recursion bug!
-            this._connect();
+        if (! this._lumen) {
+            // not bound yet
+            if (! this._discovering)
+                this._doDiscover();
+            else
+                this._onDiscovered(arg);
+        } else if (! this.ready) {
+            // we are bound but not ready yet
+            if (! this._connecting && ! this._initialsync)
+                this._doConnect();
+            else if (this._connecting)
+                this._onConnected(arg);
+            else // (this._initialsync)
+                this._onInitialStatusSynched();
         } else {
-            console.log('Lumen connected');
-            this._syncStatus(function() {
-                if (this._stopped)
-                    return;
-                this._connecting = false;
-                this.ready = true;
-                this._executePendingCommand();
-            }.bind(this));
+            // nothing more to do
+            this._stopped = true;
         }
-    }.bind(this));
+    } else if (this._wants_disconnected && this._lumen) {
+        // we are bound
+        if (this._connecting || this._initialsync || this.ready) {
+            // before _onConnected or _onInitialStatusSynched
+            this._doDisconnect();
+            this._connecting = false;
+            this._initialsync = false;
+        } else if (this._disconnecting) {
+            this._onDisconnected();
+        } else {
+            this._stopped = true;
+        }
+    } else {
+        this._stopped = true;
+    }
+};
+
+/* POST: _discovering = true */
+Controller.prototype._doDiscover = function() {
+    console.log("Start discovering...");
+    this._discovering = true;
+
+    if (!this._discovery_listener)
+        // need to keep a reference to remove on stopDiscoverAll
+        this._discovery_listener = this._evaluateUserDecision.bind(this);
+
+    // discovering process is handled by noble, only one device at a time
+    Lumen.discoverAll(this._discovery_listener);
+};
+
+/* PRE: _discovering = true
+ * POST: _discovering = false & _lumen <> null */
+Controller.prototype._onDiscovered = function(lumen) {
+    console.log("Lumen bound: " + lumen.toString());
+    this._discovering = false;
+    this._lumen = lumen;
+    this._lumen.on('disconnect', this._handleDisconnect.bind(this));
+
+    // continue
+    this._evaluateUserDecision();
+};
+
+Controller.prototype._handleDisconnect = function() {
+    // react if we are not running
+    if (this._stopped && this._wants_connected) {
+        this.ready = false;
+        this._stopped = false;
+        this._evaluateUserDecision();
+    }
+};
+
+/* PRE: _lumen <> null & _connecting = false & _initialsync = false
+ * POST: _connecting = true
+ */
+Controller.prototype._doConnect = function() {
+    console.log("Connecting...");
+    this._connecting = true;
+
+    this._lumen.connectAndSetUp(this._evaluateUserDecision.bind(this));
+};
+
+/* PRE: _lumen <> null & _connecting = true
+ * POST: error -> _connecting = false & _initialsync = false
+ *      !error -> _connecting = false & _initialsync = true
+ */
+Controller.prototype._onConnected = function(error) {
+    this._connecting = false;
+
+    if (error) {
+        console.log('Lumen connection error, retry...');
+
+        // retry
+        this._initialsync = false;
+        this._evaluateUserDecision();
+    } else {
+        this._initialsync = true;
+        this._syncStatus(this._evaluateUserDecision.bind(this));
+    }
+};
+
+/* PRE: _lumen <> null & _initialsync = true
+ * POST: _initialsync = false & ready = true
+ */
+Controller.prototype._onInitialStatusSynched = function() {
+    console.log('Lumen connected');
+    this._initialsync = false;
+    this.ready = true;
+
+    this._executePendingCommand();
+
+    // end
+    this._evaluateUserDecision();
+};
+
+/* PRE: _lumen <> null & (_connecting | _initialsync | ready)
+ * POST: ready = false & _disconnecting = true
+ */
+Controller.prototype._doDisconnect = function() {
+    console.log("Disconnecting...");
+    this._disconnecting = true;
+    this.ready = false;
+    this._lumen.disconnect(this._evaluateUserDecision.bind(this));
+}
+
+/* PRE: _lumen <> null & _disconnecting = true
+ * POST: _disconnecting = false*/
+Controller.prototype._onDisconnected = function() {
+    this._disconnecting = false;
+    console.log("Lumen disconnected");
+
+    // end
+    this._evaluateUserDecision();
+
+    //~ if (this._wants_connected) {
+        //~ console.log("Lumen disconnected, retry...");
+        //~ this._connecting = false;
+        //~ this._doConnect();
+    //~ } else {
+
+    //~ }
 };
 
 // sync internal status to the lumen
@@ -95,42 +231,6 @@ Controller.prototype._syncStatus = function(callback) {
         this._lumen.color(this.color[0]*99, this.color[1]*99, this.color[2]*99, callback);
     else
         console.log("Unknown mode", this.mode);
-};
-
-Controller.prototype._onDisconnect = function() {
-    this.ready = false;
-
-    if (! this._stopped) {
-        console.log("Lumen disconnected, retry...");
-        this._connecting = false;
-        this._connect();
-    } else {
-        console.log("Lumen disconnected");
-    }
-};
-
-Controller.prototype._doDiscover = function() {
-    if (this._discovering)
-        return;
-
-    console.log("Start discovering...");
-    this._discovering = true;
-
-    if (!this._listener_set)
-        // need to keep a reference to remove on stopDiscoverAll
-        this._listener_set = function(lumen) {
-            if (this._stopped)
-                return;
-
-            console.log("Lumen bound: " + lumen.toString());
-            this._discovering = false;
-            this._lumen = lumen;
-            this._lumen.on('disconnect', this._onDisconnect.bind(this));
-            this._connect();
-        }.bind(this);
-
-    // discovering process is handled by noble, only one device at a time
-    Lumen.discoverAll(this._listener_set);
 };
 
 Controller.prototype._executePendingCommand = function() {
@@ -280,9 +380,10 @@ Controller.prototype._executeCommand = function(cmd) {
 Controller.prototype.command = function(action, value) {
     cmd = {'action':action, 'value':value};
 
+    // ensure we are connected
     this.connect();
 
-    if (this._busy || ! this._lumen) {
+    if (this._busy || ! this.ready) {
         this._pending = cmd;
         return true;
     } else {
@@ -293,38 +394,27 @@ Controller.prototype.command = function(action, value) {
 
 /* start/restart device connection */
 Controller.prototype.connect = function() {
-    if (this.ready)
-        return;
-
-    if (!this._stopped && (this._discovering || this._connecting)) {
-        // already in progress
-        return;
-    }
-
-    this._stopped = false;
-    if (this._lumen) {
-        // we are already bound
-        this._connecting = false;
-        this._connect();
-    } else {
-        // still not bound
-        this._discovering = false;
-        this._doDiscover();
-    }
+    this._wants_connected = true;
+    this._wants_disconnected = false;
+    this._makeUserDecision();
 };
 
 /* stop any action we are taking to connect */
 Controller.prototype.disconnect = function() {
-    if (this._stopped || this.mode === Modes.SOFT)
+    // in soft mode, we need to be connected
+    if (this.mode === Modes.SOFT)
         return;
 
-    this._stopped = true;
-    this._ready = false;
+    this._wants_connected = false;
+    this._wants_disconnected = true;
+    this._makeUserDecision();
+};
 
-    if (this._discovering)
-        Lumen.stopDiscoverAll(this._listener_set);
-    else if (this._lumen && ! this._connecting)
-        this._lumen.disconnect();
+Controller.prototype._debugStatus = function() {
+    console.log("\n_lumen:", (this._lumen !== null), "\nready:", this.ready,
+      "\n_stopped:", this._stopped, "\n_discovering:", this._discovering,
+      "\n_connecting:",this._connecting, "\n_disconnecting:", this._disconnecting,
+      "\n_initialsync:", this._initialsync);
 };
 
 module.exports = {
