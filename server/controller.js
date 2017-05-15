@@ -1,4 +1,5 @@
 var Lumen = require('lumen');
+var noble = require('noble');
 
 var INTERPOLATION_INTERVAL = 40;        // milliseconds before interpolation step
 var COLOR_STEP = 0.01;                  // step for color mode
@@ -78,9 +79,11 @@ Controller.prototype._onWatchdog = function() {
     this._watchdog = null;
 
     if (this._wants_connected && this._connecting && !this._lumen.connectedAndSetUp) {
-        // we should cancel the connection here...but how?
         if (this._lumen._peripheral.state === 'disconnected') {
             console.log("Connection attempt hang");
+            // use cancel patch if available - see https://github.com/sandeepmistry/noble/issues/229
+            if (typeof noble.cancelConnect === "function")
+              noble.cancelConnect();
             this._connecting = false;
             this._evaluateUserDecision();
         } else {
