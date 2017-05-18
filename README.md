@@ -30,5 +30,5 @@ Server setup
 Enter lumen-control/server directory and
 
 - install dependency modules: `npm install`
-- create and edit a custom configuration: `cp config/default.json config/local.json`
-- run the server: `node start`
+- create a custom configuration file: `cp config/default.json config/local.json`
+- run the server: `npm start`
