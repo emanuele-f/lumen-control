@@ -60,6 +60,9 @@ var Controller = function () {
     this._interpwait = false;
     this._progress = 0.0;
     this._timer = null;
+
+    if (typeof noble.cancelConnect !== "function")
+        console.warn("cancelConnect is not available, device disconnection will fail");
 };
 
 /* updates internal state to begin evaluating user decisions */

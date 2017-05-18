@@ -1,0 +1,13 @@
+{
+	// "http" or "mqtt"
+	"server_mode": "http",
+	"mqtt": {
+		"url": "mqtt://localhost:1883",
+		"user": "homeassistant",
+		"password": "",
+		"command_topic": "bedroom/lumen1/light/switch",
+ 		"white_value_command_topic": "bedroom/lumen1/light/white",
+		"rgb_command_topic": "bedroom/lumen1/light/color",
+		"effect_command_topic": "bedroom/lumen1/light/effect"
+	}
+}

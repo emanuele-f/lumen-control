@@ -1,0 +1,17 @@
+{
+  "name": "lumen_control",
+  "version": "1.0.0",
+  "description": "A controller for the Tabu Lumen light bulb",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "config": "^1.26.1",
+    "lumen": "^2.0.0",
+    "mqtt": "^2.7.2"
+  },
+  "author": "Emanuele Faranda",
+  "license": "GPL-3.0"
+}
