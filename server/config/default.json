@@ -1,13 +1,32 @@
 {
 	// "http" or "mqtt"
-	"server_mode": "http",
+	"server_mode": "mqtt",
 	"mqtt": {
 		"url": "mqtt://localhost:1883",
 		"user": "homeassistant",
 		"password": "",
-		"command_topic": "bedroom/lumen1/light/switch",
- 		"white_value_command_topic": "bedroom/lumen1/light/white",
-		"rgb_command_topic": "bedroom/lumen1/light/color",
-		"effect_command_topic": "bedroom/lumen1/light/effect"
+
+		"command_topic": "home/light/lumen/1/power",
+ 		"white_value_command_topic": "home/light/lumen/1/white",
+		"rgb_command_topic": "home/light/lumen/1/rgb",
+		"effect_command_topic": "home/light/lumen/1/effect",
+
+		"refresh_time": 5000
+	},
+	"device": {
+		"max_discovery_time": 15000,
+		"max_connection_time": 10000,
+		"sleep_time": 10000
+	},
+	"interpolation": {
+		"interval": 30,
+		"color_step": 0.015,
+		"in_color_mode": true,
+
+		"softmode": {
+			"min_color": 0.25,
+			"max_color": 1.0,
+			"color_step": 0.002
+		}
 	}
 }
