@@ -3,7 +3,7 @@ var mqtt = require("mqtt");
 
 var PERIODIC_STATUS_UPDATE_TIMEOUT = config.get("mqtt.refresh_time");
 
-var Controller = require("./controller");
+var Controller = require("./controller_v2");
 
 function Server(controller) {
 	this._mqtt_options = {

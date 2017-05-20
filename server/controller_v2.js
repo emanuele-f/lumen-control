@@ -283,6 +283,7 @@ Controller.prototype.commandToStatus = function(command) {
   } else if (action === Commands.SOFT) {
     if (new_status.mode !== Modes.COLOR)
       new_status.color = [SOFTMODE_MIN, SOFTMODE_MIN, SOFTMODE_MIN];
+    new_status.mode = Modes.SOFT;
     this.startSoftMode();
   } else {
     console.log("ERROR: unrecognized command: ", action);
@@ -322,7 +323,6 @@ Controller.prototype.startInterpolation = function(target, step) {
 
 /* Modes.SOFT only */
 Controller.prototype.startSoftMode = function() {
-  this.status.mode = Modes.SOFT;
   this.interp.soft_stage = 0;
   this.softModeNextStep();
 };
