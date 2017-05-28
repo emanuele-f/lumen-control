@@ -10,10 +10,12 @@ var config = require('config');
 const EventEmitter = require('events');
 
 var INTERPOLATION_INTERVAL = config.get("interpolation.interval");        // milliseconds before interpolation step
+var WHITE_STEP = config.get("interpolation.white_step");                  // step for white mode
 var COLOR_STEP = config.get("interpolation.color_step");                  // step for color mode
 var SOFTMODE_MIN = config.get("interpolation.softmode.min_color");        // softmode minimum colors value
 var SOFTMODE_MAX = config.get("interpolation.softmode.max_color");        // softmode maximum colors value
 var SOFTMODE_STEP = config.get("interpolation.softmode.color_step");      // step for soft mode
+var USE_WHITE_INTERPOLATION = config.get("interpolation.in_white_mode");  // if true, colors will be interpolated when in WHITE mode
 var USE_COLOR_INTERPOLATION = config.get("interpolation.in_color_mode");  // if true, colors will be interpolated when in COLOR mode
 
 var MAX_DISCOVERY_TIME = config.get("device.max_discovery_time");
@@ -77,7 +79,7 @@ var Controller = function () {
     soft_stage: 0,
     interpstep: COLOR_STEP,
     active: false,
-    in_progress: true,
+    syncing: true,
   };
 
   this.bound = {};    // bound single instance callbacks
@@ -272,12 +274,16 @@ Controller.prototype.commandToStatus = function(command) {
     new_status.mode = Modes.COOL;
   else if (action === Commands.WHITE) {
     new_status.mode = Modes.WHITE;
-    new_status.white = value;
+
+    if (USE_WHITE_INTERPOLATION && (this.status.mode === Modes.WHITE))
+      this.startInterpolation(value, WHITE_STEP, "white");
+    else
+      new_status.white = value;
   } else if (action === Commands.COLOR) {
     new_status.mode = Modes.COLOR;
 
     if (USE_COLOR_INTERPOLATION && (this.status.mode === Modes.COLOR))
-      this.startInterpolation(value, COLOR_STEP);
+      this.startInterpolation(value, COLOR_STEP, "color");
     else
       new_status.color = value;
   } else if (action === Commands.SOFT) {
@@ -306,14 +312,31 @@ Controller.prototype.nextCommand = function() {
 // Interpolation stuff
 // -----------------------------------------------------------------------------
 
+function linear_interpolation(from, to, p) {
+  /* handle both lists and single numbers */
+  if (typeof from.length !== "number") {
+    from = [from,];
+    to = [to,];
+  }
+
+  var ret = [];
+
+  for (i=0; i<from.length; i++)
+    ret.push(from[i] * (1-p) + to[i] * p);
+
+  return (ret.length == 1) ? ret[0] : ret;
+}
+
 /* Modes.COLOR | Modes.SOFT */
-Controller.prototype.startInterpolation = function(target, step) {
+Controller.prototype.startInterpolation = function(target, step, property, interp_fn) {
   this.interp.progress = 0.0;
-  this.interp.initial = this.status.color;
+  this.interp.initial = this.status[property];
   this.interp.target = target;
   this.interp.interpstep = step;
-  this.interp.active = true;
-  this.interp.in_progress = true;
+  this.interp.active = true;        /* true if interpolation is currently active */
+  this.interp.syncing = true;       /* true if an interpolation command is being sent to the lumen */
+  this.interp.property = property;
+  this.interp.interp_fn = interp_fn || linear_interpolation;
 
   if (! this.timeouts.interpolation) {
     console.log("interpolation start");
@@ -331,13 +354,13 @@ Controller.prototype.interpolationStep = function() {
   if (this.interp.progress == 1.0) {
     if (this.status.mode === Modes.SOFT)
       this.softModeNextStep();
-    else if (this.status.mode === Modes.COLOR) {
+    else if (this.interp.active) {
       this.stopInterpolation();
       this.emit('state-sync');
     }
   }
 
-  this.interp.in_progress = false;
+  this.interp.syncing = false;
 };
 
 Controller.prototype.stopInterpolation = function() {
@@ -360,11 +383,11 @@ Controller.prototype.softModeNextStep = function () {
 
   target = mapper[this.interp.soft_stage];
   this.interp.soft_stage = (this.interp.soft_stage + 1) % 6;
-  this.startInterpolation(target, SOFTMODE_STEP);
+  this.startInterpolation(target, SOFTMODE_STEP, "color");
 };
 
 Controller.prototype.interpolationTimeout = function() {
-  if(this.interp.in_progress)
+  if(this.interp.syncing)
     return;
 
   this.interp.progress = Math.min(Math.max(0.0, this.interp.progress + this.interp.interpstep), 1.0);
@@ -372,15 +395,11 @@ Controller.prototype.interpolationTimeout = function() {
   var p = this.interp.progress;
 
   this.new_status = cloneStatus(this.status);
-  this.new_status.color = [
-      this.interp.initial[0] * (1-p) + this.interp.target[0] * p,
-      this.interp.initial[1] * (1-p) + this.interp.target[1] * p,
-      this.interp.initial[2] * (1-p) + this.interp.target[2] * p,
-  ];
+  this.new_status[this.interp.property] = this.interp.interp_fn(this.interp.initial, this.interp.target, p);
 
-  // console.log(JSON.stringify(this.new_status.color));
+  console.log(JSON.stringify(this.new_status[this.interp.property]));
 
-  this.interp.in_progress = true;
+  this.interp.syncing = true;
   this.syncToLumen();
 };
 

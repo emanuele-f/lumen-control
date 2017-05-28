@@ -78,27 +78,30 @@ Server.prototype.performEffectCommand = function(command) {
 }
 
 Server.prototype.updateStatus = function() {
-	console.log("state-sync");
+	/* Do not update status during interpolation */
+	if(! this._controller.interp.active) {
+		console.log("state-sync");
 
-	var options = {
-		retain: true,
-		qos: 0 /* best effort */,
-	};
+		var options = {
+			retain: true,
+			qos: 0 /* best effort */,
+		};
 
-	var mode_2_effect = {}
-	mode_2_effect[Controller.Modes.SOFT] = "Soft";
-	mode_2_effect[Controller.Modes.COOL] = "Cool";
-	mode_2_effect[Controller.Modes.DISCO] = "Disco";
+		var mode_2_effect = {}
+		mode_2_effect[Controller.Modes.SOFT] = "Soft";
+		mode_2_effect[Controller.Modes.COOL] = "Cool";
+		mode_2_effect[Controller.Modes.DISCO] = "Disco";
 
-	var on_state = this._controller.isLightOn() ? "ON" : "OFF";
-	var white_level = Math.ceil(this._controller.getWhiteLevel() * 255).toString();
-	var color_rgb = this._controller.getColor().map(function(x) {return Math.ceil(x * 255)}).join(",");
-	var effect = mode_2_effect[this._controller.getMode()] || "";
+		var on_state = this._controller.isLightOn() ? "ON" : "OFF";
+		var white_level = Math.ceil(this._controller.getWhiteLevel() * 255).toString();
+		var color_rgb = this._controller.getColor().map(function(x) {return Math.ceil(x * 255)}).join(",");
+		var effect = mode_2_effect[this._controller.getMode()] || "";
 
-	this._client.publish(this.command_topic + "/stat", on_state, options);
-	this._client.publish(this.white_value_command_topic + "/stat", white_level, options);
-	this._client.publish(this.rgb_command_topic + "/stat", color_rgb, options);
-	this._client.publish(this.effect_command_topic + "/stat", effect, options);
+		this._client.publish(this.command_topic + "/stat", on_state, options);
+		this._client.publish(this.white_value_command_topic + "/stat", white_level, options);
+		this._client.publish(this.rgb_command_topic + "/stat", color_rgb, options);
+		this._client.publish(this.effect_command_topic + "/stat", effect, options);
+	}
 
 	if (this._statusTimer)
 		clearInterval(this._statusTimer);

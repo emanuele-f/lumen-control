@@ -21,7 +21,9 @@
 	"interpolation": {
 		"interval": 30,
 		"color_step": 0.015,
+		"white_step": 0.025,
 		"in_color_mode": true,
+		"in_white_mode": true,
 
 		"softmode": {
 			"min_color": 0.25,
