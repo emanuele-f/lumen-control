@@ -35,7 +35,10 @@ Enter lumen-control/server directory and
 
 - install dependency modules: `npm install`
 - create a custom configuration file: `cp config/default.json config/local.json`
-- run the server: `npm start`
+- edit `config/local.json`, in particular the MQTT login credentials
+- run the server: `sudo npm start`
+
+Note: on some linux system this could be required: `sudo BLUETOOTH_HCI_SOCKET_FORCE_USB=1 npm start`
 
 Home Assistant
 --------------
@@ -58,4 +61,14 @@ light:
   payload_on: "ON"
   payload_off: "OFF"
   qos: 0
+```
+
+Apply connection cancel patch
+-----------------------------
+
+https://github.com/sandeepmistry/noble/issues/229
+
+```
+cd server/node_modules/noble
+patch -p1 < ../../noble_disconnect.patch
 ```

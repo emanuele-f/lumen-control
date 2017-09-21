@@ -397,7 +397,7 @@ Controller.prototype.interpolationTimeout = function() {
   this.new_status = cloneStatus(this.status);
   this.new_status[this.interp.property] = this.interp.interp_fn(this.interp.initial, this.interp.target, p);
 
-  console.log(JSON.stringify(this.new_status[this.interp.property]));
+  // console.log(JSON.stringify(this.new_status[this.interp.property]));
 
   this.interp.syncing = true;
   this.syncToLumen();
